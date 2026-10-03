@@ -416,6 +416,7 @@
             </label>
           </div>
           <p id="storageSaveStatus" class="text-xs text-slate-500 mt-2" role="status" aria-live="polite">Storage status: checking browser storage…</p>
+           <p id="changedBackupStatus" class="text-[11px] text-slate-400 mt-1" role="status" aria-live="polite">Changed-data browser backup: checking…</p>
         </div>
 
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -610,12 +611,32 @@
     let cmDbPromise = null;
     let cmSaveQueue = Promise.resolve();
     let cmLastSaveAt = null;
+    const CM_BACKUP_REVISION_KEY = 'cm_backup_revision';
+    const CM_BACKUP_UPDATED_KEY = 'cm_backup_updated_at';
+
+    function markBrowserBackupUpdated(snapshot) {
+      try {
+        const revision = String(Number(localStorage.getItem(CM_BACKUP_REVISION_KEY) || 0) + 1);
+        localStorage.setItem(CM_BACKUP_REVISION_KEY, revision);
+        localStorage.setItem(CM_BACKUP_UPDATED_KEY, snapshot.savedAt || new Date().toISOString());
+      } catch (_) {}
+    }
 
     function setStorageStatus(message, isError = false) {
       const el = document.getElementById('storageSaveStatus');
       if (!el) return;
       el.textContent = message;
       el.className = `text-xs mt-2 ${isError ? 'text-rose-700 font-semibold' : 'text-emerald-700'}`;
+      const backupEl = document.getElementById('changedBackupStatus');
+      if (backupEl) {
+        try {
+          const when = localStorage.getItem(CM_BACKUP_UPDATED_KEY);
+          const revision = localStorage.getItem(CM_BACKUP_REVISION_KEY);
+          backupEl.textContent = when
+            ? `Changed-data browser backup: revision ${revision || '1'} · ${new Date(when).toLocaleTimeString()}.`
+            : 'Changed-data browser backup: not created yet.';
+        } catch (_) {}
+      }
     }
 
     function openClassroomDB() {
@@ -686,10 +707,12 @@
           setStorageStatus(`All records saved in this browser at ${cmLastSaveAt.toLocaleTimeString()}. Keep using Backup ALL Data for an external copy.`);
           // Best-effort legacy fallback; never let a quota error undo the IDB save.
           try { localStorage.setItem('cm_state_backup', JSON.stringify(snapshot)); } catch (_) {}
+          markBrowserBackupUpdated(snapshot);
           return true;
         } catch (idbError) {
           try {
             localStorage.setItem('cm_state_backup', JSON.stringify(snapshot));
+            markBrowserBackupUpdated(snapshot);
             cmLastSaveAt = new Date();
             setStorageStatus(`Saved to browser fallback storage at ${cmLastSaveAt.toLocaleTimeString()}; export a JSON backup as an extra safeguard.`);
             return true;
@@ -712,7 +735,7 @@
     const CM_GOOGLE_CLIENT_ID_KEY = 'cm_google_client_id';
     const CM_DRIVE_FILE_ID_KEY = 'cm_drive_file_id';
     const CM_DRIVE_LAST_SYNC_KEY = 'cm_drive_last_sync';
-    const CM_DRIVE_BACKUP_FOLDER_NAME = 'classroom-manager BACKUP';
+    const CM_DRIVE_BACKUP_FOLDER_NAME = 'Classroom Manager Backups';
     const CM_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
     let cmGoogleTokenClient = null;
     let cmGoogleAccessToken = null;
@@ -861,78 +884,23 @@
       return r.json();
     }
 
-    async function migrateLegacyDriveBackups(targetFolderId) {
-      // One-time migration: move backup files from the old folder into the new
-      // folder, then remove the old folder if it is empty. The files are app-
-      // created backups, so they are within the drive.file scope this app uses.
-      const oldName = 'Classroom Manager Backups';
-      const folderQuery = `name='${oldName.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-      const folderUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(folderQuery)}&spaces=drive&pageSize=20&fields=files(id,name,mimeType)`;
-      const folderResponse = await driveRequest(folderUrl);
-      const folderData = await folderResponse.json();
-      const oldFolders = folderData.files || [];
-      if (!oldFolders.length) return 0;
-
-      let moved = 0;
-      for (const oldFolder of oldFolders) {
-        const childQuery = `'${oldFolder.id}' in parents and trashed=false`;
-        const childUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(childQuery)}&spaces=drive&pageSize=100&fields=files(id,name,mimeType,parents)`;
-        const childResponse = await driveRequest(childUrl);
-        const childData = await childResponse.json();
-        const children = childData.files || [];
-
-        for (const child of children) {
-          // Move backup files; leave unrelated subfolders/content alone.
-          if (child.mimeType === 'application/vnd.google-apps.folder') continue;
-          if (!/^ClassroomManager_Data(?:_|\.)/.test(child.name || '')) continue;
-          await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(child.id)}?addParents=${encodeURIComponent(targetFolderId)}&removeParents=${encodeURIComponent(oldFolder.id)}&fields=id,name,parents`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: '{}'
-          });
-          moved++;
-        }
-
-        // If the old folder is now empty, move it to trash so only the new
-        // backup folder remains. If anything else is inside, leave it intact.
-        const remainingQuery = `'${oldFolder.id}' in parents and trashed=false`;
-        const remainingUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(remainingQuery)}&spaces=drive&pageSize=10&fields=files(id,name,mimeType)`;
-        const remainingResponse = await driveRequest(remainingUrl);
-        const remainingData = await remainingResponse.json();
-        if (!(remainingData.files || []).length) {
-          await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(oldFolder.id)}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trashed: true })
-          });
-        }
-      }
-      return moved;
-    }
-
     async function findOrCreateDriveBackupFolder() {
       const q = `name='${CM_DRIVE_BACKUP_FOLDER_NAME.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
       const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&pageSize=10&fields=files(id,name,mimeType)`;
       const r = await driveRequest(url);
       const data = await r.json();
-      let folder;
-      if (data.files && data.files.length) {
-        folder = data.files[0];
-      } else {
-        const body = JSON.stringify({
-          name: CM_DRIVE_BACKUP_FOLDER_NAME,
-          mimeType: 'application/vnd.google-apps.folder'
-        });
-        const created = await driveRequest('https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body
-        });
-        folder = await created.json();
-        if (!folder.id) throw new Error('Could not create the automatic backup folder in Google Drive.');
-      }
-
-      await migrateLegacyDriveBackups(folder.id);
+      if (data.files && data.files.length) return data.files[0];
+      const body = JSON.stringify({
+        name: CM_DRIVE_BACKUP_FOLDER_NAME,
+        mimeType: 'application/vnd.google-apps.folder'
+      });
+      const created = await driveRequest('https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body
+      });
+      const folder = await created.json();
+      if (!folder.id) throw new Error('Could not create the automatic backup folder in Google Drive.');
       return folder;
     }
 
@@ -957,28 +925,7 @@
       });
       const file = await r.json();
       if (!file.id) throw new Error('Automatic backup could not be created. Push was stopped to protect your existing Drive data.');
-
-      // Keep only the 5 newest automatic backups. Each backup is a complete
-      // snapshot, so the newest five remain independently usable for recovery.
-      await pruneOldDriveBackups(folderId, 5);
       return file;
-    }
-
-    async function pruneOldDriveBackups(folderId, keepCount = 5) {
-      const q = `'${folderId}' in parents and trashed=false and mimeType='application/json'`;
-      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&pageSize=100&orderBy=createdTime desc&fields=files(id,name,createdTime,mimeType)`;
-      const r = await driveRequest(url);
-      const data = await r.json();
-      const backups = (data.files || []).filter(f => /^ClassroomManager_Data_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.json$/.test(f.name || ''));
-      const oldBackups = backups.slice(keepCount);
-      for (const backup of oldBackups) {
-        await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(backup.id)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ trashed: true })
-        });
-      }
-      return oldBackups.length;
     }
 
     async function syncToGoogleDrive() {
@@ -1062,7 +1009,12 @@
     window.addEventListener('DOMContentLoaded', async () => {
       updateDriveUI();
       if ('serviceWorker' in navigator && window.isSecureContext) {
-        navigator.serviceWorker.register('./sw.js').catch(err => console.warn('PWA service worker registration failed:', err));
+        try {
+          const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+          await registration.update();
+        } catch (err) {
+          console.warn('PWA service worker registration/update failed:', err);
+        }
       }
       setStorageStatus('Storage status: checking saved records…');
       try { await loadStateFromStorage(); }
@@ -1564,15 +1516,17 @@
             <div class="text-[11px] font-semibold text-emerald-700 mt-1">Attendance: ${attendanceSummary.percentage.toFixed(2)}% · Attendance Marks: ${attendanceSummary.marks}/10 (${attendanceSummary.present}/${attendanceSummary.total} classes)</div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
-            <input 
-              type="number" 
-              min="0" 
-              max="${maxScore}" 
-              value="${score}" 
-              oninput="updateEvalScore('${st.reg}', this.value)"
-              class="w-20 bg-slate-50 border border-slate-300 rounded-lg p-2 text-sm font-bold text-center text-slate-800 focus:outline-brand-500"
-            />
-            <span class="text-xs font-bold text-slate-400">/ ${maxScore}</span>
+            <div class="flex items-stretch gap-1" role="group" aria-label="Marks controls for ${escapeHtml(st.name)}">
+              <button type="button" onclick="adjustEvalScore('${st.reg}', -1)" aria-label="Decrease marks"
+                class="w-10 min-h-11 rounded-lg bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-black text-lg leading-none border border-slate-300 touch-manipulation">▼</button>
+              <input type="number" inputmode="decimal" min="0" max="${maxScore}" step="1" value="${score}"
+                aria-label="Marks for ${escapeHtml(st.name)}"
+                oninput="updateEvalScore('${st.reg}', this.value)" onblur="updateEvalScore('${st.reg}', this.value)"
+                class="w-16 sm:w-20 min-h-11 bg-slate-50 border border-slate-300 rounded-lg p-2 text-sm font-bold text-center text-slate-800 focus:outline-brand-500" />
+              <button type="button" onclick="adjustEvalScore('${st.reg}', 1)" aria-label="Increase marks"
+                class="w-10 min-h-11 rounded-lg bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-black text-lg leading-none border border-slate-300 touch-manipulation">▲</button>
+              <span class="self-center text-xs font-bold text-slate-400 whitespace-nowrap">/ ${maxScore}</span>
+            </div>
           </div>
         `;
         container.appendChild(row);
@@ -1607,7 +1561,19 @@
         score = maxScore;
         showToast(`Marks cannot exceed the maximum of ${maxScore}.`, 'error');
       }
+      score = Math.min(maxScore, Math.max(0, score));
       appState.currentEvalScores[reg] = score;
+      updateEvalMetrics();
+    }
+
+    // Mobile-friendly one-mark controls; the configured maximum is enforced
+    // here too, so taps can never take a mark above the limit.
+    function adjustEvalScore(reg, delta) {
+      const maxScore = validateEvalMaximum();
+      const current = Number(appState.currentEvalScores[reg]);
+      const score = Math.min(maxScore, Math.max(0, (Number.isFinite(current) ? current : 0) + Number(delta || 0)));
+      appState.currentEvalScores[reg] = score;
+      renderEvalList();
       updateEvalMetrics();
     }
 
