@@ -9,6 +9,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://apis.google.com/js/api.js" async defer></script>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome Icons -->
@@ -370,20 +371,25 @@
       </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div class="md:col-span-2">
-          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Google OAuth Client ID</label>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Google OAuth Web Client ID</label>
           <input id="googleClientIdInput" type="text" placeholder="Paste your Google OAuth Web Client ID here" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-mono focus:outline-brand-500" />
-          <p class="text-[11px] text-slate-400 mt-1">The Client ID is not a password. It identifies this web app to Google.</p>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+            <input id="googleApiKeyInput" type="text" placeholder="Google API Key (Picker)" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-mono focus:outline-brand-500" />
+            <input id="googleAppIdInput" type="text" placeholder="Google Cloud Project Number (App ID)" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-mono focus:outline-brand-500" />
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1">Client ID identifies the web app. API Key + Project Number are used by Google Picker. These are not passwords.</p>
         </div>
         <div class="flex flex-wrap items-end gap-2">
-          <button onclick="saveGoogleClientId()" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs">Save Client ID</button>
+          <button onclick="saveGoogleClientId()" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs">Save Google Settings</button>
           <button onclick="connectGoogleDrive()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs"><i class="fa-brands fa-google"></i> Connect</button>
+          <button onclick="selectGoogleDriveDataFile()" class="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-bold rounded-xl text-xs"><i class="fa-solid fa-file-circle-check"></i> Select Drive File</button>
           <button onclick="syncFromGoogleDrive()" class="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold rounded-xl text-xs"><i class="fa-solid fa-cloud-arrow-down"></i> Pull</button>
           <button onclick="syncToGoogleDrive()" class="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold rounded-xl text-xs"><i class="fa-solid fa-cloud-arrow-up"></i> Push</button>
         </div>
       </div>
       <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
         <span id="driveSyncStatus" class="text-slate-500">Google Drive is not configured.</span>
-        <span id="driveLastSync" class="text-slate-400"></span><span class="text-emerald-600 font-semibold">Automatic backup: ON</span>
+        <span id="driveLastSync" class="text-slate-400"></span><span id="driveSelectedFile" class="text-blue-600 font-semibold"></span><span class="text-emerald-600 font-semibold">Automatic backup: ON</span>
       </div>
     </section>
 
@@ -737,6 +743,10 @@
     const CM_DRIVE_LAST_SYNC_KEY = 'cm_drive_last_sync';
     const CM_DRIVE_BACKUP_FOLDER_NAME = 'Classroom Manager Backups';
     const CM_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+    const CM_GOOGLE_API_KEY_KEY = 'cm_google_api_key';
+    const CM_GOOGLE_APP_ID_KEY = 'cm_google_app_id';
+    const CM_DRIVE_FILE_NAME_KEY = 'cm_drive_file_name';
+    let cmPickerLoaded = false;
     let cmGoogleTokenClient = null;
     let cmGoogleAccessToken = null;
     let cmGoogleTokenExpiresAt = 0;
@@ -751,18 +761,25 @@
       const status = document.getElementById('driveSyncStatus');
       const last = document.getElementById('driveLastSync');
       const input = document.getElementById('googleClientIdInput');
+      const apiKeyInput = document.getElementById('googleApiKeyInput');
+      const appIdInput = document.getElementById('googleAppIdInput');
       const connected = !!cmGoogleAccessToken;
       if (input && document.activeElement !== input) input.value = getGoogleClientId();
+      if (apiKeyInput && document.activeElement !== apiKeyInput) apiKeyInput.value = localStorage.getItem(CM_GOOGLE_API_KEY_KEY) || '';
+      if (appIdInput && document.activeElement !== appIdInput) appIdInput.value = localStorage.getItem(CM_GOOGLE_APP_ID_KEY) || '';
       if (badge) {
         badge.textContent = connected ? 'Connected to Google Drive' : (getGoogleClientId() ? 'Ready to connect' : 'Not configured');
         badge.className = `px-3 py-1.5 rounded-full text-xs font-bold ${connected ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`;
       }
+      const selectedEl = document.getElementById('driveSelectedFile');
+      if (selectedEl) { const selectedName = localStorage.getItem(CM_DRIVE_FILE_NAME_KEY); selectedEl.textContent = selectedName ? `Authorized file: ${selectedName}` : ''; }
       if (last) {
         const t = localStorage.getItem(CM_DRIVE_LAST_SYNC_KEY);
         last.textContent = t ? `Last sync: ${new Date(t).toLocaleString()}` : '';
       }
       if (status && !cmDriveBusy) {
-        status.textContent = connected ? 'Google Drive connection is active.' : (getGoogleClientId() ? 'Client ID saved. Click Connect.' : 'Google Drive is not configured.');
+        const selected = localStorage.getItem(CM_DRIVE_FILE_NAME_KEY);
+        status.textContent = connected ? (selected ? `Connected. Selected file: ${selected}` : 'Google Drive connection is active. Select the Classroom Manager data file before Pull.') : (getGoogleClientId() ? 'Client ID saved. Click Connect.' : 'Google Drive is not configured.');
       }
     }
 
@@ -773,6 +790,10 @@
         return;
       }
       localStorage.setItem(CM_GOOGLE_CLIENT_ID_KEY, value);
+      const apiKey = document.getElementById('googleApiKeyInput')?.value.trim() || '';
+      const appId = document.getElementById('googleAppIdInput')?.value.trim() || '';
+      if (apiKey) localStorage.setItem(CM_GOOGLE_API_KEY_KEY, apiKey); else localStorage.removeItem(CM_GOOGLE_API_KEY_KEY);
+      if (appId) localStorage.setItem(CM_GOOGLE_APP_ID_KEY, appId); else localStorage.removeItem(CM_GOOGLE_APP_ID_KEY);
       cmGoogleTokenClient = null;
       cmGoogleAccessToken = null;
       cmGoogleTokenExpiresAt = 0;
@@ -821,9 +842,64 @@
       if (!response.ok) {
         let detail = '';
         try { detail = (await response.json()).error?.message || ''; } catch (_) {}
-        throw new Error(detail || `Google Drive request failed (${response.status})`);
+        throw new Error(detail ? `${detail} (HTTP ${response.status})` : `Google Drive request failed (HTTP ${response.status})`);
       }
       return response;
+    }
+
+    function loadGooglePicker() {
+      return new Promise((resolve, reject) => {
+        if (window.google?.picker) return resolve();
+        if (!window.gapi) return reject(new Error('Google Picker library has not loaded yet. Refresh the page and try again.'));
+        gapi.load('picker', { callback: () => { cmPickerLoaded = true; resolve(); }, onerror: () => reject(new Error('Google Picker could not be loaded. Check your internet connection.')) });
+      });
+    }
+
+    async function selectGoogleDriveDataFile() {
+      if (cmDriveBusy) return;
+      try {
+        const clientId = getGoogleClientId();
+        const apiKey = (localStorage.getItem(CM_GOOGLE_API_KEY_KEY) || '').trim();
+        const appId = (localStorage.getItem(CM_GOOGLE_APP_ID_KEY) || '').trim();
+        if (!clientId) throw new Error('Save the Google OAuth Web Client ID first.');
+        if (!apiKey || !appId) throw new Error('Google Picker setup is incomplete. Save the Google API Key and Google Cloud Project Number (App ID) first.');
+        cmDriveBusy = true; updateDriveUI();
+        await ensureGoogleToken(true);
+        await loadGooglePicker();
+        const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+          .setIncludeFolders(false)
+          .setSelectFolderEnabled(false)
+          .setMode(google.picker.DocsViewMode.LIST)
+          .setMimeTypes('application/json');
+        const picker = new google.picker.PickerBuilder()
+          .setAppId(appId)
+          .setDeveloperKey(apiKey)
+          .setOAuthToken(cmGoogleAccessToken)
+          .addView(view)
+          .setTitle('Select ClassroomManager_Data.json from My Drive')
+          .setCallback(async (data) => {
+            if (data.action === google.picker.Action.PICKED) {
+              const doc = data.docs?.[0];
+              if (!doc?.id) { cmDriveBusy = false; updateDriveUI(); showToast('No Drive file was selected.', 'error'); return; }
+              if (doc.name !== CM_DRIVE_FILE_NAME) {
+                const proceed = confirm(`You selected "${doc.name}". Classroom Manager normally uses "${CM_DRIVE_FILE_NAME}". Use this file anyway?`);
+                if (!proceed) { cmDriveBusy = false; updateDriveUI(); return; }
+              }
+              localStorage.setItem(CM_DRIVE_FILE_ID_KEY, doc.id);
+              localStorage.setItem(CM_DRIVE_FILE_NAME_KEY, doc.name || CM_DRIVE_FILE_NAME);
+              cmDriveBusy = false; updateDriveUI();
+              showToast(`Drive file authorized: ${doc.name || CM_DRIVE_FILE_NAME}`);
+            } else if (data.action === google.picker.Action.CANCEL) {
+              cmDriveBusy = false; updateDriveUI();
+            }
+          })
+          .build();
+        picker.setVisible(true);
+        // The Picker callback owns cmDriveBusy after the dialog opens.
+      } catch (err) {
+        cmDriveBusy = false; updateDriveUI();
+        showToast(`Drive file selection failed: ${err.message}`, 'error');
+      }
     }
 
     async function connectGoogleDrive() {
@@ -845,19 +921,11 @@
     async function findDriveDataFile() {
       const remembered = localStorage.getItem(CM_DRIVE_FILE_ID_KEY);
       if (remembered) {
-        try {
-          const r = await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(remembered)}?fields=id,name,mimeType,trashed`);
-          const f = await r.json();
-          if (f.id && !f.trashed) return f;
-        } catch (_) {}
+        const r = await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(remembered)}?fields=id,name,mimeType,trashed`);
+        const f = await r.json();
+        if (f.id && !f.trashed) return f;
       }
-      const q = `name='${CM_DRIVE_FILE_NAME}' and trashed=false`;
-      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&pageSize=10&fields=files(id,name,mimeType,modifiedTime)`;
-      const r = await driveRequest(url);
-      const data = await r.json();
-      const file = (data.files || [])[0] || null;
-      if (file?.id) localStorage.setItem(CM_DRIVE_FILE_ID_KEY, file.id);
-      return file;
+      return null;
     }
 
     async function createDriveDataFile(snapshot) {
@@ -969,7 +1037,7 @@
       try {
         cmDriveBusy = true; updateDriveUI();
         const file = await findDriveDataFile();
-        if (!file?.id) throw new Error('No ClassroomManager_Data.json was found in this Google Drive for this app. Push your current data first.');
+        if (!file?.id) throw new Error('No Drive data file has been authorized. Click Select Drive File and choose ClassroomManager_Data.json from the My Drive of kan.nba@wbscte.ac.in, then click Pull.');
         const r = await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?alt=media`);
         const data = await r.json();
         if (!data || !Array.isArray(data.attendanceLogs) || !Array.isArray(data.classLogs) || !Array.isArray(data.evalLogs) || !data.classes || !Array.isArray(data.completedSessions)) {
