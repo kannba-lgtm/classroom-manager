@@ -2061,6 +2061,8 @@
         if (cat === 'Evaluation') badgeColor = "bg-amber-100 text-amber-700";
         if (cat === 'Class Log') badgeColor = "bg-indigo-100 text-indigo-700";
 
+        const periodText = session.startDate ? `${session.startDate} → ${session.endDate}` : (session.date || '');
+
         let detailsPreview = "";
         if (cat === 'Attendance' || cat === 'Evaluation') {
           detailsPreview = `${session.records.length} students recorded`;
