@@ -364,7 +364,7 @@
             <i class="fa-brands fa-google-drive text-blue-600 text-lg"></i>
             <h2 class="text-sm font-extrabold text-slate-800 uppercase tracking-wide">Google Drive Sync</h2>
           </div>
-          <p class="text-xs text-slate-500 mt-1">Use the same classroom data on your PC and mobile. Local browser storage remains available for offline work.</p>
+          <p class="text-xs text-slate-500 mt-1">Use the same classroom data on your PC and mobile. Each Push automatically saves the previous Drive copy as a dated JSON backup.</p>
         </div>
         <div id="driveConnectionBadge" class="px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">Not connected</div>
       </div>
@@ -383,7 +383,7 @@
       </div>
       <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
         <span id="driveSyncStatus" class="text-slate-500">Google Drive is not configured.</span>
-        <span id="driveLastSync" class="text-slate-400"></span>
+        <span id="driveLastSync" class="text-slate-400"></span><span class="text-emerald-600 font-semibold">Automatic backup: ON</span>
       </div>
     </section>
 
@@ -712,6 +712,7 @@
     const CM_GOOGLE_CLIENT_ID_KEY = 'cm_google_client_id';
     const CM_DRIVE_FILE_ID_KEY = 'cm_drive_file_id';
     const CM_DRIVE_LAST_SYNC_KEY = 'cm_drive_last_sync';
+    const CM_DRIVE_BACKUP_FOLDER_NAME = 'Classroom Manager Backups';
     const CM_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
     let cmGoogleTokenClient = null;
     let cmGoogleAccessToken = null;
@@ -860,6 +861,50 @@
       return r.json();
     }
 
+    async function findOrCreateDriveBackupFolder() {
+      const q = `name='${CM_DRIVE_BACKUP_FOLDER_NAME.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&pageSize=10&fields=files(id,name,mimeType)`;
+      const r = await driveRequest(url);
+      const data = await r.json();
+      if (data.files && data.files.length) return data.files[0];
+      const body = JSON.stringify({
+        name: CM_DRIVE_BACKUP_FOLDER_NAME,
+        mimeType: 'application/vnd.google-apps.folder'
+      });
+      const created = await driveRequest('https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body
+      });
+      const folder = await created.json();
+      if (!folder.id) throw new Error('Could not create the automatic backup folder in Google Drive.');
+      return folder;
+    }
+
+    function automaticBackupFileName() {
+      const d = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      return `ClassroomManager_Data_${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}.json`;
+    }
+
+    async function createDriveBackup(snapshot, folderId) {
+      const metadata = {
+        name: automaticBackupFileName(),
+        mimeType: 'application/json',
+        parents: [folderId]
+      };
+      const boundary = '-------ClassroomManagerBackupBoundary' + Date.now();
+      const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(snapshot)}\r\n--${boundary}--`;
+      const r = await driveRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime,parents', {
+        method: 'POST',
+        headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+        body
+      });
+      const file = await r.json();
+      if (!file.id) throw new Error('Automatic backup could not be created. Push was stopped to protect your existing Drive data.');
+      return file;
+    }
+
     async function syncToGoogleDrive() {
       if (cmDriveBusy) return;
       try {
@@ -867,13 +912,28 @@
         await cmSaveQueue.catch(() => {});
         const snapshot = getStateSnapshot();
         const file = await findDriveDataFile();
-        if (file?.id) await updateDriveDataFile(file.id, snapshot);
-        else await createDriveDataFile(snapshot);
-        const now = new Date().toISOString();
-        localStorage.setItem(CM_DRIVE_LAST_SYNC_KEY, now);
-        cmDriveBusy = false; updateDriveUI();
-        setStorageStatus(`Synced to Google Drive at ${new Date(now).toLocaleTimeString()}.`);
-        showToast('Classroom data saved to Google Drive.');
+
+        // Safety rule: before replacing an existing live file, automatically
+        // preserve the current Drive copy in a dated backup folder.
+        if (file?.id) {
+          const currentResponse = await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?alt=media`);
+          const currentData = await currentResponse.json();
+          const backupFolder = await findOrCreateDriveBackupFolder();
+          const backup = await createDriveBackup(currentData, backupFolder.id);
+          await updateDriveDataFile(file.id, snapshot);
+          const now = new Date().toISOString();
+          localStorage.setItem(CM_DRIVE_LAST_SYNC_KEY, now);
+          cmDriveBusy = false; updateDriveUI();
+          setStorageStatus(`Saved to Google Drive. Automatic backup created: ${backup.name}`);
+          showToast(`Saved. Automatic backup created: ${backup.name}`);
+        } else {
+          await createDriveDataFile(snapshot);
+          const now = new Date().toISOString();
+          localStorage.setItem(CM_DRIVE_LAST_SYNC_KEY, now);
+          cmDriveBusy = false; updateDriveUI();
+          setStorageStatus(`First copy created in Google Drive at ${new Date(now).toLocaleTimeString()}.`);
+          showToast('Classroom data saved to Google Drive. Automatic backups will be made on future Push operations.');
+        }
       } catch (err) {
         cmDriveBusy = false; updateDriveUI();
         setStorageStatus(`Google Drive sync failed: ${err.message}`, true);
