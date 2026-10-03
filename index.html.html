@@ -1,0 +1,2592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Classroom Manager</title>
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="description" content="Cross-platform Classroom Manager with offline storage and Google Drive synchronization." />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen">
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-4 right-4 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 pointer-events-none bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3">
+    <i id="toastIcon" class="fa-solid fa-circle-check text-green-400 text-lg"></i>
+    <span id="toastMessage" class="text-sm font-medium">Notification</span>
+  </div>
+
+  <div class="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+    <!-- Navigation Tabs -->
+    <header class="bg-white rounded-2xl p-3 shadow-sm border border-slate-200 flex flex-wrap gap-2">
+      <button onclick="switchTab('attendance')" id="tabBtn-attendance" class="tab-btn px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 bg-brand-600 text-white shadow-sm">
+        <i class="fa-solid fa-clipboard-user"></i> Attendance
+      </button>
+      <button onclick="switchTab('evaluation')" id="tabBtn-evaluation" class="tab-btn px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 bg-slate-100 text-slate-600 hover:bg-slate-200">
+        <i class="fa-solid fa-pen-to-square"></i> Evaluation
+      </button>
+      <button onclick="switchTab('classlog')" id="tabBtn-classlog" class="tab-btn px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 bg-slate-100 text-slate-600 hover:bg-slate-200">
+        <i class="fa-solid fa-book-open"></i> Class Log
+      </button>
+      <button onclick="switchTab('logs')" id="tabBtn-logs" class="tab-btn px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 bg-slate-100 text-slate-600 hover:bg-slate-200">
+        <i class="fa-solid fa-box-archive"></i> Saved Logs
+      </button>
+      <button onclick="switchTab('sessions')" id="tabBtn-sessions" class="tab-btn px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 bg-slate-100 text-slate-600 hover:bg-slate-200">
+        <i class="fa-solid fa-folder-open"></i> Completed Sessions
+      </button>
+      <button onclick="switchTab('roster')" id="tabBtn-roster" class="tab-btn px-4 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 bg-slate-100 text-slate-600 hover:bg-slate-200 ml-auto">
+        <i class="fa-solid fa-sliders"></i> Classes & Roster
+      </button>
+    </header>
+
+    <!-- TAB 1: ATTENDANCE -->
+    <main id="tab-attendance" class="tab-content space-y-6">
+      <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
+          <input type="date" id="attDate" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Class</label>
+          <select id="attClassSelect" onchange="onClassChange()" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500"></select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Subject</label>
+          <select id="attSubjectSelect" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500"></select>
+        </div>
+        <div class="flex items-end gap-2">
+          <button onclick="setAllAttendance('Present')" class="flex-1 bg-green-50 hover:bg-green-100 text-green-700 font-bold py-2.5 rounded-xl text-xs transition-colors border border-green-200">
+            Mark All Present
+          </button>
+          <button onclick="setAllAttendance('Absent')" class="flex-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold py-2.5 rounded-xl text-xs transition-colors border border-rose-200">
+            Mark All Absent
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Metrics -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <span class="text-xs font-bold text-slate-400 uppercase">Present</span>
+          <p id="attCountPresent" class="text-2xl font-black text-green-600">0</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <span class="text-xs font-bold text-slate-400 uppercase">Absent</span>
+          <p id="attCountAbsent" class="text-2xl font-black text-rose-600">0</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <span class="text-xs font-bold text-slate-400 uppercase">Total Roster</span>
+          <p id="attCountTotal" class="text-2xl font-black text-slate-700">0</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <span class="text-xs font-bold text-slate-400 uppercase">Attendance Rate</span>
+          <p id="attPercentage" class="text-2xl font-black text-brand-600">0%</p>
+        </div>
+      </div>
+
+      <!-- Roster List with Search -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+        <!-- Search Input -->
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-sm"></i>
+          <input type="text" id="attSearchInput" oninput="filterAttendanceList()" placeholder="Search student by name or ID..." class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-10 pr-4 py-2 text-xs font-semibold text-slate-700 focus:outline-brand-500" />
+        </div>
+
+        <div id="attendanceList" class="divide-y divide-slate-100"></div>
+        <div class="flex justify-end gap-3 pt-4 border-t border-slate-100">
+          <button onclick="exportAttendanceCSV()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors">
+            <i class="fa-solid fa-download"></i> Export CSV
+          </button>
+          <button onclick="saveAttendanceSession()" class="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs transition-colors shadow-md">
+            <i class="fa-solid fa-floppy-disk"></i> Save Session
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- TAB 2: EVALUATION -->
+    <main id="tab-evaluation" class="tab-content hidden space-y-6">
+      <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
+          <input type="date" id="evalDate" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Class</label>
+          <select id="evalClassSelect" onchange="onEvalClassChange()" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500"></select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Subject</label>
+          <select id="evalSubjectSelect" onchange="renderEvalList()" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500"></select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Eval Type</label>
+          <select id="evalTypeSelect" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500">
+            <option value="Class Test 1">Class Test 1</option>
+            <option value="Class Test 2">Class Test 2</option>
+            <option value="Quiz">Quiz</option>
+            <option value="Assignment">Assignment</option>
+            <option value="Lab Practical">Lab Practical</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Max Score</label>
+          <input type="number" id="evalMaxScore" value="25" min="1" step="any" onchange="validateEvalMaximum(); renderEvalList()" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500" />
+        </div>
+      </div>
+
+      <!-- Class Attendance cum Evaluation Records export panel -->
+      <section class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-3">
+        <div>
+          <h3 class="text-sm font-extrabold uppercase tracking-wide text-slate-800">Class Attendance cum Evaluation Records</h3>
+          <p class="text-xs text-slate-500 mt-1">Exports are generated for the selected class and subject. Course Coordinator, Session, and optional date limits are read from the Class Log tab. If no date limits are entered, all saved attendance and evaluation records for this subject are included.</p>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <button onclick="exportSubjectComprehensiveCSV()" class="px-4 py-3 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs transition-colors">
+            <i class="fa-solid fa-file-csv mr-1"></i> Export ALL Columns CSV
+          </button>
+          <button onclick="exportSubjectAttendanceCSV()" class="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors">
+            <i class="fa-solid fa-calendar-check mr-1"></i> Export Attendance-Only CSV
+          </button>
+        </div>
+        <p class="text-[11px] text-slate-500">Attendance marks out of 10: below 50% = 0; 50–&lt;60% = 2; 60–&lt;70% = 6; 70–&lt;80% = 7; 80–&lt;90% = 9; 90% and above = 10.</p>
+      </section>
+
+      <!-- Quick Metrics -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <span class="text-xs font-bold text-slate-400 uppercase">Average Score</span>
+          <p id="evalAvgScore" class="text-2xl font-black text-amber-600">0 / 25</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <span class="text-xs font-bold text-slate-400 uppercase">Highest Score</span>
+          <p id="evalMaxAwarded" class="text-2xl font-black text-green-600">0</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <span class="text-xs font-bold text-slate-400 uppercase">Pass Rate (≥40%)</span>
+          <p id="evalPassRate" class="text-2xl font-black text-brand-600">0%</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <span class="text-xs font-bold text-slate-400 uppercase">Evaluated Students</span>
+          <p id="evalTotalCount" class="text-2xl font-black text-slate-700">0</p>
+        </div>
+      </div>
+
+      <!-- Roster List with Search -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+        <div class="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3 pb-2 border-b border-slate-100">
+          <span class="text-xs font-bold text-slate-500 uppercase">Student Scoring Roster</span>
+          <button onclick="setAllEvalScores(document.getElementById('evalMaxScore').value)" class="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs">
+            Set All Full Marks
+          </button>
+        </div>
+
+        <!-- Search Input -->
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-sm"></i>
+          <input type="text" id="evalSearchInput" oninput="filterEvalList()" placeholder="Search student by name or ID..." class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-10 pr-4 py-2 text-xs font-semibold text-slate-700 focus:outline-brand-500" />
+        </div>
+
+        <div id="evaluationList" class="divide-y divide-slate-100"></div>
+        <div class="flex justify-end gap-3 pt-4 border-t border-slate-100">
+          <button onclick="exportEvaluationCSV()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors">
+            <i class="fa-solid fa-download"></i> Export CSV
+          </button>
+          <button onclick="saveEvaluationSession()" class="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition-colors shadow-md">
+            <i class="fa-solid fa-floppy-disk"></i> Save Evaluation
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- TAB 3: CLASS LOG & SESSION PLANNER -->
+    <main id="tab-classlog" class="tab-content hidden space-y-6">
+      <!-- Top Meta Details Card -->
+      <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+        <div class="flex items-center gap-2 border-b border-slate-100 pb-3">
+          <i class="fa-solid fa-user-tie text-brand-600 text-lg"></i>
+          <h3 class="text-sm font-extrabold text-slate-800 uppercase tracking-wide">Academic & Faculty Metadata</h3>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Course Coordinator / Teacher Name</label>
+            <input type="text" id="logTeacherName" placeholder="e.g. Dr. A. Maji" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Designation</label>
+            <input type="text" id="logDesignation" placeholder="e.g. Associate Professor / Lecturer" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Academic Session</label>
+            <input type="text" id="logSessionYear" placeholder="e.g. 2025 - 2026" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500" />
+          </div>
+        </div>
+      </div>
+
+      <!-- SESSION PERIOD -->
+      <div class="bg-emerald-50 rounded-2xl p-5 border border-emerald-200 shadow-sm space-y-4">
+        <div class="flex items-center gap-2 border-b border-emerald-100 pb-3">
+          <i class="fa-solid fa-calendar-range text-emerald-600 text-lg"></i>
+          <h3 class="text-sm font-extrabold text-emerald-800 uppercase tracking-wide">Session Period</h3>
+          <span class="text-[10px] font-bold text-emerald-600 ml-2">Define the complete teaching/session period</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Session Start Date</label>
+            <input type="date" id="sessionStartDate" onchange="saveSessionPeriod()" class="w-full bg-white border border-emerald-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-emerald-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Session End Date</label>
+            <input type="date" id="sessionEndDate" onchange="saveSessionPeriod()" class="w-full bg-white border border-emerald-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-emerald-500" />
+          </div>
+          <div class="md:col-span-2 flex items-end">
+            <div class="text-xs text-emerald-800 bg-white/70 rounded-xl p-3 w-full border border-emerald-100">
+              <i class="fa-solid fa-circle-info mr-1"></i> Daily attendance remains date-wise. The monthly register will be calculated automatically from all attendance records within this period.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Daily Log Entry Form -->
+      <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-calendar-day text-brand-600 text-lg"></i>
+            <h3 class="text-sm font-extrabold text-slate-800 uppercase tracking-wide">Daily Lecture & Assignment Log</h3>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
+            <input type="date" id="classLogDate" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Class</label>
+            <select id="classLogClassSelect" onchange="onClassLogClassChange()" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Subject</label>
+            <select id="classLogSubjectSelect" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500"></select>
+          </div>
+        </div>
+
+        <!-- Topic Covered Area -->
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Topic(s) Covered on Date (Editable)</label>
+          <textarea id="classLogTopics" rows="3" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs font-medium text-slate-800 focus:outline-brand-500" placeholder="e.g. Introduction to 3-Phase Induction Motors, Torque-Slip Characteristics..."></textarea>
+        </div>
+
+        <!-- Assignment Sub-Section -->
+        <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <input type="checkbox" id="hasAssignmentCheck" onchange="toggleAssignmentSection()" class="w-4 h-4 text-brand-600 rounded focus:ring-brand-500">
+              <label for="hasAssignmentCheck" class="text-xs font-extrabold text-slate-700 uppercase">Assignment Given Today</label>
+            </div>
+          </div>
+
+          <div id="assignmentDetailsContainer" class="hidden space-y-3 pt-2">
+            <div>
+              <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Assignment Topic / Problem Details</label>
+              <textarea id="classLogAssignmentText" rows="2" class="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs font-medium text-slate-800 focus:outline-brand-500" placeholder="Describe assignment problem statement or chapter questions..."></textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Submission Deadline / Target Date</label>
+              <input type="date" id="classLogSubmissionDate" class="w-full md:w-1/3 bg-white border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700 focus:outline-brand-500" />
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-3 pt-2">
+          <button onclick="exportClassLogCSV()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors">
+            <i class="fa-solid fa-download"></i> Export Log CSV
+          </button>
+          <button onclick="saveClassLogSession()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors shadow-md">
+            <i class="fa-solid fa-floppy-disk"></i> Save Class Log
+          </button>
+          <button onclick="completeCurrentSession()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shadow-md">
+            <i class="fa-solid fa-circle-check"></i> Complete Session & Export
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- TAB 4: SAVED LOGS -->
+    <main id="tab-logs" class="tab-content hidden space-y-6">
+      <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <select id="logFilterClass" onchange="onLogFilterClassChange()" class="bg-slate-50 border border-slate-300 rounded-xl p-2 text-xs font-bold text-slate-700"></select>
+          <select id="logFilterSubject" onchange="renderSavedLogs()" class="bg-slate-50 border border-slate-300 rounded-xl p-2 text-xs font-bold text-slate-700"></select>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="exportAllLogsCSV()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors">
+            <i class="fa-solid fa-file-export"></i> Export All CSV
+          </button>
+          <button onclick="confirmClearLogs()" class="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-xl text-xs transition-colors border border-rose-200">
+            <i class="fa-solid fa-trash-can"></i> Clear History
+          </button>
+        </div>
+      </div>
+
+      <div id="logsContainer" class="space-y-3"></div>
+    </main>
+
+    <!-- GOOGLE DRIVE SYNC -->
+    <section class="bg-white rounded-2xl p-5 border border-blue-200 shadow-sm space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2">
+            <i class="fa-brands fa-google-drive text-blue-600 text-lg"></i>
+            <h2 class="text-sm font-extrabold text-slate-800 uppercase tracking-wide">Google Drive Sync</h2>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">Use the same classroom data on your PC and mobile. Each Push automatically saves the previous Drive copy as a dated JSON backup.</p>
+        </div>
+        <div id="driveConnectionBadge" class="px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">Not connected</div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="md:col-span-2">
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Google OAuth Client ID</label>
+          <input id="googleClientIdInput" type="text" placeholder="Paste your Google OAuth Web Client ID here" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-mono focus:outline-brand-500" />
+          <p class="text-[11px] text-slate-400 mt-1">The Client ID is not a password. It identifies this web app to Google.</p>
+        </div>
+        <div class="flex flex-wrap items-end gap-2">
+          <button onclick="saveGoogleClientId()" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs">Save Client ID</button>
+          <button onclick="connectGoogleDrive()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs"><i class="fa-brands fa-google"></i> Connect</button>
+          <button onclick="syncFromGoogleDrive()" class="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold rounded-xl text-xs"><i class="fa-solid fa-cloud-arrow-down"></i> Pull</button>
+          <button onclick="syncToGoogleDrive()" class="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold rounded-xl text-xs"><i class="fa-solid fa-cloud-arrow-up"></i> Push</button>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+        <span id="driveSyncStatus" class="text-slate-500">Google Drive is not configured.</span>
+        <span id="driveLastSync" class="text-slate-400"></span><span class="text-emerald-600 font-semibold">Automatic backup: ON</span>
+      </div>
+    </section>
+
+    <!-- TAB 5: COMPLETED SESSIONS -->
+    <main id="tab-sessions" class="tab-content hidden space-y-6">
+      <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-folder-open text-emerald-600 text-lg"></i>
+              <h3 class="text-sm font-extrabold text-slate-800 uppercase tracking-wide">Completed Session Storage</h3>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">
+              Each completed class session is stored as one bundled record containing attendance, evaluation and class-log data.
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="exportCompletedSessionsCSV()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors">
+              <i class="fa-solid fa-file-csv"></i> Export Sessions CSV
+            </button>
+            <button onclick="exportSessionArchiveJSON()" class="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-xs transition-colors border border-emerald-200">
+              <i class="fa-solid fa-file-code"></i> Backup JSON
+            </button>
+            <button onclick="exportFullBackupJSON()" class="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-xl text-xs transition-colors border border-blue-200">
+              <i class="fa-solid fa-shield-halved"></i> Backup ALL Data
+            </button>
+            <label class="px-3 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 font-bold rounded-xl text-xs transition-colors border border-violet-200 cursor-pointer">
+              <i class="fa-solid fa-upload"></i> Restore Backup
+              <input type="file" accept=".json,application/json" onchange="restoreFullBackupJSON(event)" class="hidden">
+            </label>
+          </div>
+          <p id="storageSaveStatus" class="text-xs text-slate-500 mt-2" role="status" aria-live="polite">Storage status: checking browser storage…</p>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <span class="text-xs font-bold text-slate-400 uppercase">Completed</span>
+            <p id="completedSessionCount" class="text-2xl font-black text-emerald-600">0</p>
+          </div>
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <span class="text-xs font-bold text-slate-400 uppercase">Stored Students</span>
+            <p id="completedStudentCount" class="text-2xl font-black text-brand-600">0</p>
+          </div>
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <span class="text-xs font-bold text-slate-400 uppercase">Storage</span>
+            <p id="storageUsageText" class="text-2xl font-black text-slate-700">Local</p>
+          </div>
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <span class="text-xs font-bold text-slate-400 uppercase">Last Completed</span>
+            <p id="lastCompletedSession" class="text-sm font-black text-slate-700 mt-1">—</p>
+          </div>
+        </div>
+
+        <div class="flex flex-col md:flex-row gap-3">
+          <select id="sessionFilterClass" onchange="renderCompletedSessions()" class="flex-1 bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-bold text-slate-700">
+            <option value="ALL">All Classes</option>
+          </select>
+          <input id="sessionFilterDate" type="date" onchange="renderCompletedSessions()" class="bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-bold text-slate-700" />
+          <button onclick="clearSessionFilters()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">
+            Clear Filters
+          </button>
+        </div>
+
+        <div id="completedSessionsContainer" class="space-y-3"></div>
+      </div>
+    </main>
+
+    <!-- TAB 6: ROSTER & SUBJECTS -->
+    <main id="tab-roster" class="tab-content hidden space-y-6">
+      <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div class="flex items-center gap-3">
+            <label class="text-xs font-bold text-slate-500 uppercase">Select Class</label>
+            <select id="rosterClassSelect" onchange="loadRosterEditor()" class="bg-slate-50 border border-slate-300 rounded-xl p-2 text-sm font-bold text-slate-700"></select>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="openBulkImportModal()" class="px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold rounded-xl text-xs transition-colors border border-emerald-200">
+              <i class="fa-solid fa-paste"></i> Bulk Paste Excel Data
+            </button>
+            <button onclick="openNewClassModal()" class="px-3 py-2 bg-brand-50 text-brand-700 hover:bg-brand-100 font-bold rounded-xl text-xs transition-colors">
+              <i class="fa-solid fa-plus"></i> New Class
+            </button>
+            <button onclick="deleteCurrentClassRoster()" class="px-3 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 font-bold rounded-xl text-xs transition-colors">
+              <i class="fa-solid fa-trash"></i> Delete Class
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Subjects (Comma separated)</label>
+              <input type="text" id="classSubjectsInput" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-medium text-slate-700" placeholder="Mathematics, Physics, Chemistry" />
+            </div>
+            <div>
+              <div class="flex justify-between items-center mb-1">
+                <label class="block text-xs font-bold text-slate-500 uppercase">Student Roster List (Format: Roll/Reg, Student Name)</label>
+                <button onclick="copyRosterToClipboard()" class="text-xs font-semibold text-brand-600 hover:underline">
+                  <i class="fa-regular fa-copy"></i> Copy Raw Text
+                </button>
+              </div>
+              <textarea id="rosterInput" rows="10" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs font-mono text-slate-700 focus:outline-brand-500" placeholder="101, John Doe&#10;102, Jane Smith"></textarea>
+            </div>
+            <button onclick="saveRosterAndSubjectsFromTextarea()" class="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs transition-colors shadow-md">
+              <i class="fa-solid fa-check"></i> Save Class Data
+            </button>
+          </div>
+
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col h-[400px]">
+            <div class="flex justify-between items-center mb-2 pb-2 border-b border-slate-200">
+              <span class="text-xs font-bold text-slate-500 uppercase">Active Class Preview</span>
+              <span id="activeRosterCount" class="text-xs font-extrabold bg-brand-100 text-brand-800 px-2 py-0.5 rounded-full">0</span>
+            </div>
+            <div class="overflow-y-auto flex-1">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="text-slate-400 border-b border-slate-200">
+                    <th class="p-2">#</th>
+                    <th class="p-2">Reg / ID</th>
+                    <th class="p-2">Name</th>
+                  </tr>
+                </thead>
+                <tbody id="activeRosterTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- MODAL: Bulk Paste Excel Data -->
+  <div id="bulkImportModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+      <div class="flex justify-between items-center">
+        <h3 class="text-lg font-bold text-slate-800">Bulk Import / Paste Roster</h3>
+        <button onclick="closeBulkImportModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+      <p class="text-xs text-slate-500">
+        Copy your student table from <strong>Excel / Google Sheets</strong> and paste it directly below. Columns should be arranged as <strong>[Reg/ID] [Tab/Comma] [Student Name]</strong>.
+      </p>
+      <div>
+        <textarea id="bulkPasteTextarea" rows="8" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs font-mono text-slate-800 focus:outline-brand-500" placeholder="202601&#t;Anish Sharma&#10;202602&#t;Bikram Roy"></textarea>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeBulkImportModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">Cancel</button>
+        <button onclick="processBulkPasteData()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs">Append & Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Clear Logs -->
+  <div id="clearConfirmModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+      <h3 class="text-lg font-bold text-slate-800">Clear All Saved Records?</h3>
+      <p class="text-xs text-slate-500">This clears the working attendance, evaluation and class-log records. Completed Session Archive records are stored separately and will be preserved.</p>
+      <div class="flex justify-end gap-2">
+        <button onclick="closeClearModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">Cancel</button>
+        <button onclick="clearAllLogs()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs">Clear Everything</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: New Class -->
+  <div id="newClassModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+      <h3 class="text-lg font-bold text-slate-800">Create New Class</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Class Name</label>
+          <input type="text" id="newClassNameInput" placeholder="e.g. EE-Sem-3" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Initial Subjects (Comma separated)</label>
+          <input type="text" id="newClassSubjectsInput" placeholder="Circuit Theory, Machines, Measurements" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm font-semibold text-slate-700" />
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeNewClassModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">Cancel</button>
+        <button onclick="createNewClass()" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs">Create Class</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- APPLICATION SCRIPT -->
+  <script>
+    // --- GLOBAL APPLICATION STATE ---
+    const DEFAULT_CLASSES = {
+      "Class-A": {
+        subjects: ["Electrical Machines", "Circuit Theory", "Control Systems"],
+        roster: [
+          { reg: "202601", name: "Anish Sharma" },
+          { reg: "202602", name: "Bikram Roy" },
+          { reg: "202603", name: "Debolina Sen" },
+          { reg: "202604", name: "Kabir Hossain" }
+        ]
+      },
+      "Class-B": {
+        subjects: ["Power Electronics", "Digital Systems"],
+        roster: [
+          { reg: "202611", name: "Priya Das" },
+          { reg: "202612", name: "Rahul Mukherjee" },
+          { reg: "202613", name: "Sneha Ganguly" }
+        ]
+      }
+    };
+
+    let appState = {
+      classes: {},
+      attendanceLogs: [],
+      evalLogs: [],
+      classLogs: [],
+      completedSessions: [],
+      sessionPeriod: { startDate: '', endDate: '' },
+      currentAttendanceStatus: {},
+      currentEvalScores: {}
+    };
+
+    // --- RELIABLE LOCAL PERSISTENCE ---
+    // IndexedDB is the primary store. localStorage is retained only as a
+    // compatibility/migration fallback; it is not rewritten with every large log.
+    const CM_DB_NAME = 'ClassroomManagerDB';
+    const CM_DB_VERSION = 1;
+    let cmDbPromise = null;
+    let cmSaveQueue = Promise.resolve();
+    let cmLastSaveAt = null;
+
+    function setStorageStatus(message, isError = false) {
+      const el = document.getElementById('storageSaveStatus');
+      if (!el) return;
+      el.textContent = message;
+      el.className = `text-xs mt-2 ${isError ? 'text-rose-700 font-semibold' : 'text-emerald-700'}`;
+    }
+
+    function openClassroomDB() {
+      if (!('indexedDB' in window)) return Promise.reject(new Error('IndexedDB is unavailable in this browser context'));
+      if (!cmDbPromise) cmDbPromise = new Promise((resolve, reject) => {
+        const request = indexedDB.open(CM_DB_NAME, CM_DB_VERSION);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains('appData')) db.createObjectStore('appData');
+        };
+        request.onsuccess = () => {
+          const db = request.result;
+          db.onversionchange = () => { db.close(); cmDbPromise = null; };
+          resolve(db);
+        };
+        request.onerror = () => reject(request.error || new Error('Could not open local database'));
+        request.onblocked = () => reject(new Error('The local database is blocked by another open app tab'));
+      });
+      return cmDbPromise;
+    }
+
+    async function readDurableState() {
+      const db = await openClassroomDB();
+      return new Promise((resolve, reject) => {
+        const req = db.transaction('appData', 'readonly').objectStore('appData').get('state');
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error || new Error('Could not read saved records'));
+      });
+    }
+
+    async function writeDurableState(snapshot) {
+      const db = await openClassroomDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('appData', 'readwrite');
+        tx.objectStore('appData').put(snapshot, 'state');
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error('Could not write saved records'));
+        tx.onabort = () => reject(tx.error || new Error('Saving was aborted'));
+      });
+    }
+
+    function getStateSnapshot() {
+      return {
+        schemaVersion: 2,
+        savedAt: new Date().toISOString(),
+        classes: appState.classes,
+        attendanceLogs: appState.attendanceLogs,
+        evalLogs: appState.evalLogs,
+        classLogs: appState.classLogs,
+        completedSessions: appState.completedSessions,
+        sessionPeriod: appState.sessionPeriod,
+        teacherMeta: {
+          teacher: document.getElementById('logTeacherName')?.value || '',
+          designation: document.getElementById('logDesignation')?.value || '',
+          session: document.getElementById('logSessionYear')?.value || ''
+        }
+      };
+    }
+
+    function persistAllData(showErrors = true) {
+      // Capture the latest state when this queued write actually runs. This
+      // avoids a slower earlier write overwriting a newer snapshot.
+      cmSaveQueue = cmSaveQueue.catch(() => {}).then(async () => {
+        const snapshot = getStateSnapshot();
+        try {
+          await writeDurableState(snapshot);
+          cmLastSaveAt = new Date();
+          setStorageStatus(`All records saved in this browser at ${cmLastSaveAt.toLocaleTimeString()}. Keep using Backup ALL Data for an external copy.`);
+          // Best-effort legacy fallback; never let a quota error undo the IDB save.
+          try { localStorage.setItem('cm_state_backup', JSON.stringify(snapshot)); } catch (_) {}
+          return true;
+        } catch (idbError) {
+          try {
+            localStorage.setItem('cm_state_backup', JSON.stringify(snapshot));
+            cmLastSaveAt = new Date();
+            setStorageStatus(`Saved to browser fallback storage at ${cmLastSaveAt.toLocaleTimeString()}; export a JSON backup as an extra safeguard.`);
+            return true;
+          } catch (fallbackError) {
+            const message = 'SAVE FAILED: browser storage is blocked or full. Use Backup ALL Data and save the JSON file before closing.';
+            setStorageStatus(message, true);
+            if (showErrors) showToast(message, 'error');
+            console.error('Classroom Manager persistence error:', idbError, fallbackError);
+            return false;
+          }
+        }
+      });
+      return cmSaveQueue;
+    }
+
+    // --- GOOGLE DRIVE SYNC ---
+    // Uses the least-privilege drive.file scope. The app creates/updates only its own
+    // Classroom Manager JSON file in the user's My Drive.
+    const CM_DRIVE_FILE_NAME = 'ClassroomManager_Data.json';
+    const CM_GOOGLE_CLIENT_ID_KEY = 'cm_google_client_id';
+    const CM_DRIVE_FILE_ID_KEY = 'cm_drive_file_id';
+    const CM_DRIVE_LAST_SYNC_KEY = 'cm_drive_last_sync';
+    const CM_DRIVE_BACKUP_FOLDER_NAME = 'Classroom Manager Backups';
+    const CM_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+    let cmGoogleTokenClient = null;
+    let cmGoogleAccessToken = null;
+    let cmGoogleTokenExpiresAt = 0;
+    let cmDriveBusy = false;
+
+    function getGoogleClientId() {
+      return (localStorage.getItem(CM_GOOGLE_CLIENT_ID_KEY) || '').trim();
+    }
+
+    function updateDriveUI() {
+      const badge = document.getElementById('driveConnectionBadge');
+      const status = document.getElementById('driveSyncStatus');
+      const last = document.getElementById('driveLastSync');
+      const input = document.getElementById('googleClientIdInput');
+      const connected = !!cmGoogleAccessToken;
+      if (input && document.activeElement !== input) input.value = getGoogleClientId();
+      if (badge) {
+        badge.textContent = connected ? 'Connected to Google Drive' : (getGoogleClientId() ? 'Ready to connect' : 'Not configured');
+        badge.className = `px-3 py-1.5 rounded-full text-xs font-bold ${connected ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`;
+      }
+      if (last) {
+        const t = localStorage.getItem(CM_DRIVE_LAST_SYNC_KEY);
+        last.textContent = t ? `Last sync: ${new Date(t).toLocaleString()}` : '';
+      }
+      if (status && !cmDriveBusy) {
+        status.textContent = connected ? 'Google Drive connection is active.' : (getGoogleClientId() ? 'Client ID saved. Click Connect.' : 'Google Drive is not configured.');
+      }
+    }
+
+    function saveGoogleClientId() {
+      const value = document.getElementById('googleClientIdInput')?.value.trim() || '';
+      if (!value || !value.endsWith('.apps.googleusercontent.com')) {
+        showToast('Enter a valid Google OAuth Web Client ID.', 'error');
+        return;
+      }
+      localStorage.setItem(CM_GOOGLE_CLIENT_ID_KEY, value);
+      cmGoogleTokenClient = null;
+      cmGoogleAccessToken = null;
+      cmGoogleTokenExpiresAt = 0;
+      updateDriveUI();
+      showToast('Google Client ID saved on this device.');
+    }
+
+    function ensureGoogleToken(interactive = false) {
+      return new Promise((resolve, reject) => {
+        const clientId = getGoogleClientId();
+        if (!clientId) return reject(new Error('Google OAuth Client ID is not configured.'));
+        if (!window.google?.accounts?.oauth2) return reject(new Error('Google authentication library has not loaded yet. Check your internet connection.'));
+        if (cmGoogleAccessToken && Date.now() < cmGoogleTokenExpiresAt - 60000) return resolve(cmGoogleAccessToken);
+        if (!cmGoogleTokenClient) {
+          cmGoogleTokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: clientId,
+            scope: CM_DRIVE_SCOPE,
+            callback: (response) => {
+              if (response.error) return reject(new Error(response.error_description || response.error));
+              cmGoogleAccessToken = response.access_token;
+              cmGoogleTokenExpiresAt = Date.now() + (Number(response.expires_in || 3600) * 1000);
+              updateDriveUI();
+              resolve(cmGoogleAccessToken);
+            }
+          });
+        }
+        try {
+          cmGoogleTokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+        } catch (err) {
+          reject(err);
+        }
+      });
+    }
+
+    async function driveRequest(url, options = {}, retry = true) {
+      const token = await ensureGoogleToken(false);
+      const headers = new Headers(options.headers || {});
+      headers.set('Authorization', `Bearer ${token}`);
+      const response = await fetch(url, { ...options, headers });
+      if (response.status === 401 && retry) {
+        cmGoogleAccessToken = null;
+        cmGoogleTokenExpiresAt = 0;
+        await ensureGoogleToken(true);
+        return driveRequest(url, options, false);
+      }
+      if (!response.ok) {
+        let detail = '';
+        try { detail = (await response.json()).error?.message || ''; } catch (_) {}
+        throw new Error(detail || `Google Drive request failed (${response.status})`);
+      }
+      return response;
+    }
+
+    async function connectGoogleDrive() {
+      try {
+        if (!getGoogleClientId()) {
+          document.getElementById('googleClientIdInput')?.focus();
+          throw new Error('Paste and save your Google OAuth Web Client ID first.');
+        }
+        cmDriveBusy = true; updateDriveUI();
+        await ensureGoogleToken(true);
+        cmDriveBusy = false; updateDriveUI();
+        showToast('Google Drive connected.');
+      } catch (err) {
+        cmDriveBusy = false; updateDriveUI();
+        showToast(`Google Drive connection failed: ${err.message}`, 'error');
+      }
+    }
+
+    async function findDriveDataFile() {
+      const remembered = localStorage.getItem(CM_DRIVE_FILE_ID_KEY);
+      if (remembered) {
+        try {
+          const r = await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(remembered)}?fields=id,name,mimeType,trashed`);
+          const f = await r.json();
+          if (f.id && !f.trashed) return f;
+        } catch (_) {}
+      }
+      const q = `name='${CM_DRIVE_FILE_NAME}' and trashed=false`;
+      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&pageSize=10&fields=files(id,name,mimeType,modifiedTime)`;
+      const r = await driveRequest(url);
+      const data = await r.json();
+      const file = (data.files || [])[0] || null;
+      if (file?.id) localStorage.setItem(CM_DRIVE_FILE_ID_KEY, file.id);
+      return file;
+    }
+
+    async function createDriveDataFile(snapshot) {
+      const metadata = { name: CM_DRIVE_FILE_NAME, mimeType: 'application/json' };
+      const boundary = '-------ClassroomManagerBoundary' + Date.now();
+      const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(snapshot)}\r\n--${boundary}--`;
+      const r = await driveRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime', {
+        method: 'POST',
+        headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+        body
+      });
+      const file = await r.json();
+      localStorage.setItem(CM_DRIVE_FILE_ID_KEY, file.id);
+      return file;
+    }
+
+    async function updateDriveDataFile(fileId, snapshot) {
+      const body = JSON.stringify(snapshot);
+      const r = await driveRequest(`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body
+      });
+      return r.json();
+    }
+
+    async function findOrCreateDriveBackupFolder() {
+      const q = `name='${CM_DRIVE_BACKUP_FOLDER_NAME.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&pageSize=10&fields=files(id,name,mimeType)`;
+      const r = await driveRequest(url);
+      const data = await r.json();
+      if (data.files && data.files.length) return data.files[0];
+      const body = JSON.stringify({
+        name: CM_DRIVE_BACKUP_FOLDER_NAME,
+        mimeType: 'application/vnd.google-apps.folder'
+      });
+      const created = await driveRequest('https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body
+      });
+      const folder = await created.json();
+      if (!folder.id) throw new Error('Could not create the automatic backup folder in Google Drive.');
+      return folder;
+    }
+
+    function automaticBackupFileName() {
+      const d = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      return `ClassroomManager_Data_${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}.json`;
+    }
+
+    async function createDriveBackup(snapshot, folderId) {
+      const metadata = {
+        name: automaticBackupFileName(),
+        mimeType: 'application/json',
+        parents: [folderId]
+      };
+      const boundary = '-------ClassroomManagerBackupBoundary' + Date.now();
+      const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(snapshot)}\r\n--${boundary}--`;
+      const r = await driveRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime,parents', {
+        method: 'POST',
+        headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+        body
+      });
+      const file = await r.json();
+      if (!file.id) throw new Error('Automatic backup could not be created. Push was stopped to protect your existing Drive data.');
+      return file;
+    }
+
+    async function syncToGoogleDrive() {
+      if (cmDriveBusy) return;
+      try {
+        cmDriveBusy = true; updateDriveUI();
+        await cmSaveQueue.catch(() => {});
+        const snapshot = getStateSnapshot();
+        const file = await findDriveDataFile();
+
+        // Safety rule: before replacing an existing live file, automatically
+        // preserve the current Drive copy in a dated backup folder.
+        if (file?.id) {
+          const currentResponse = await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?alt=media`);
+          const currentData = await currentResponse.json();
+          const backupFolder = await findOrCreateDriveBackupFolder();
+          const backup = await createDriveBackup(currentData, backupFolder.id);
+          await updateDriveDataFile(file.id, snapshot);
+          const now = new Date().toISOString();
+          localStorage.setItem(CM_DRIVE_LAST_SYNC_KEY, now);
+          cmDriveBusy = false; updateDriveUI();
+          setStorageStatus(`Saved to Google Drive. Automatic backup created: ${backup.name}`);
+          showToast(`Saved. Automatic backup created: ${backup.name}`);
+        } else {
+          await createDriveDataFile(snapshot);
+          const now = new Date().toISOString();
+          localStorage.setItem(CM_DRIVE_LAST_SYNC_KEY, now);
+          cmDriveBusy = false; updateDriveUI();
+          setStorageStatus(`First copy created in Google Drive at ${new Date(now).toLocaleTimeString()}.`);
+          showToast('Classroom data saved to Google Drive. Automatic backups will be made on future Push operations.');
+        }
+      } catch (err) {
+        cmDriveBusy = false; updateDriveUI();
+        setStorageStatus(`Google Drive sync failed: ${err.message}`, true);
+        showToast(`Drive upload failed: ${err.message}`, 'error');
+      }
+    }
+
+    async function syncFromGoogleDrive() {
+      if (cmDriveBusy) return;
+      try {
+        cmDriveBusy = true; updateDriveUI();
+        const file = await findDriveDataFile();
+        if (!file?.id) throw new Error('No ClassroomManager_Data.json was found in this Google Drive for this app. Push your current data first.');
+        const r = await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?alt=media`);
+        const data = await r.json();
+        if (!data || !Array.isArray(data.attendanceLogs) || !Array.isArray(data.classLogs) || !Array.isArray(data.evalLogs) || !data.classes || !Array.isArray(data.completedSessions)) {
+          throw new Error('The Drive file is not a valid Classroom Manager data file.');
+        }
+        if (!confirm('Replace the current device data with the copy from Google Drive? Export a local backup first if you need the current device version.')) {
+          cmDriveBusy = false; updateDriveUI(); return;
+        }
+        appState.classes = data.classes;
+        appState.attendanceLogs = data.attendanceLogs;
+        appState.evalLogs = data.evalLogs;
+        appState.classLogs = data.classLogs;
+        appState.completedSessions = data.completedSessions;
+        appState.sessionPeriod = data.sessionPeriod || { startDate: '', endDate: '' };
+        const meta = data.teacherMeta || {};
+        document.getElementById('logTeacherName').value = meta.teacher || '';
+        document.getElementById('logDesignation').value = meta.designation || '';
+        document.getElementById('logSessionYear').value = meta.session || '';
+        await persistAllData(false);
+        populateClassDropdowns(); onClassChange(); onEvalClassChange(); onClassLogClassChange(); loadRosterEditor(); renderSavedLogs(); renderCompletedSessions();
+        const now = new Date().toISOString();
+        localStorage.setItem(CM_DRIVE_LAST_SYNC_KEY, now);
+        cmDriveBusy = false; updateDriveUI();
+        setStorageStatus(`Loaded from Google Drive at ${new Date(now).toLocaleTimeString()}.`);
+        showToast('Classroom data loaded from Google Drive.');
+      } catch (err) {
+        cmDriveBusy = false; updateDriveUI();
+        setStorageStatus(`Google Drive download failed: ${err.message}`, true);
+        showToast(`Drive download failed: ${err.message}`, 'error');
+      }
+    }
+
+    // After each successful local save, keep the Drive sync explicitly user-controlled.
+    // This prevents repeated Drive writes while a teacher is entering a large attendance list.
+
+    // --- INITIALIZATION ---
+    window.addEventListener('DOMContentLoaded', async () => {
+      updateDriveUI();
+      if ('serviceWorker' in navigator && window.isSecureContext) {
+        navigator.serviceWorker.register('./sw.js').catch(err => console.warn('PWA service worker registration failed:', err));
+      }
+      setStorageStatus('Storage status: checking saved records…');
+      try { await loadStateFromStorage(); }
+      catch (err) {
+        console.error('Could not restore saved data:', err);
+        setStorageStatus('Could not read saved records. Restore a previously exported JSON backup.', true);
+        showToast('Could not load saved records. Please restore a JSON backup.', 'error');
+      }
+
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('attDate').value = today;
+      document.getElementById('evalDate').value = today;
+      document.getElementById('classLogDate').value = today;
+      document.getElementById('sessionStartDate').value = appState.sessionPeriod.startDate || today;
+      document.getElementById('sessionEndDate').value = appState.sessionPeriod.endDate || today;
+
+      populateClassDropdowns();
+      onClassChange();
+      onEvalClassChange();
+      onClassLogClassChange();
+      loadRosterEditor();
+      renderSavedLogs();
+      renderCompletedSessions();
+      // Initialize the store for first-time users, and show a real save result.
+      if (!cmLastSaveAt) await persistAllData(false);
+    });
+
+    function readLegacyState() {
+      const readJSON = (key, fallback) => {
+        try { const value = localStorage.getItem(key); return value ? JSON.parse(value) : fallback; }
+        catch (_) { return fallback; }
+      };
+      return {
+        classes: readJSON('cm_classes', null),
+        attendanceLogs: readJSON('cm_att_logs', []),
+        evalLogs: readJSON('cm_eval_logs', []),
+        classLogs: readJSON('cm_class_logs', []),
+        completedSessions: readJSON('cm_completed_sessions', []),
+        sessionPeriod: readJSON('cm_session_period', { startDate: '', endDate: '' }),
+        teacherMeta: readJSON('cm_teacher_meta', {})
+      };
+    }
+
+    function hasAnyRecords(data) {
+      return !!data && ['attendanceLogs','evalLogs','classLogs','completedSessions'].some(k => Array.isArray(data[k]) && data[k].length > 0);
+    }
+
+    async function loadStateFromStorage() {
+      let saved = null;
+      try { saved = await readDurableState(); }
+      catch (err) { console.warn('IndexedDB read unavailable; trying browser backup.', err); }
+      if (!saved) {
+        try {
+          const raw = localStorage.getItem('cm_state_backup');
+          if (raw) saved = JSON.parse(raw);
+        } catch (err) { console.warn('Combined local backup could not be read.', err); }
+      }
+
+      const legacy = readLegacyState();
+      if (saved) {
+        // Previous builds could leave an empty IndexedDB snapshot even when the
+        // old cm_* keys still contained the user's records. Recover those records
+        // only for an old snapshot without a save timestamp, avoiding resurrection
+        // after a deliberate clear made by this version.
+        if (!saved.savedAt) {
+          for (const key of ['attendanceLogs','evalLogs','classLogs','completedSessions']) {
+            if ((!Array.isArray(saved[key]) || saved[key].length === 0) && legacy[key]?.length) saved[key] = legacy[key];
+          }
+          if ((!saved.classes || Object.keys(saved.classes).length === 0) && legacy.classes) saved.classes = legacy.classes;
+          if ((!saved.sessionPeriod || (!saved.sessionPeriod.startDate && !saved.sessionPeriod.endDate)) && legacy.sessionPeriod) saved.sessionPeriod = legacy.sessionPeriod;
+          if (!saved.teacherMeta || (!saved.teacherMeta.teacher && !saved.teacherMeta.designation && !saved.teacherMeta.session)) saved.teacherMeta = legacy.teacherMeta || {};
+        }
+        appState.classes = saved.classes && Object.keys(saved.classes).length ? saved.classes : (legacy.classes || DEFAULT_CLASSES);
+        appState.attendanceLogs = Array.isArray(saved.attendanceLogs) ? saved.attendanceLogs : [];
+        appState.evalLogs = Array.isArray(saved.evalLogs) ? saved.evalLogs : [];
+        appState.classLogs = Array.isArray(saved.classLogs) ? saved.classLogs : [];
+        appState.completedSessions = Array.isArray(saved.completedSessions) ? saved.completedSessions : [];
+        appState.sessionPeriod = saved.sessionPeriod || { startDate: '', endDate: '' };
+        const meta = saved.teacherMeta || {};
+        if (meta.teacher) document.getElementById('logTeacherName').value = meta.teacher;
+        if (meta.designation) document.getElementById('logDesignation').value = meta.designation;
+        if (meta.session) document.getElementById('logSessionYear').value = meta.session;
+        setStorageStatus(`Loaded ${appState.attendanceLogs.length} attendance, ${appState.evalLogs.length} evaluation, ${appState.classLogs.length} class-log and ${appState.completedSessions.length} completed-session records.`);
+        // If recovered from old keys, write the repaired snapshot back now.
+        if (!saved.savedAt) await persistAllData(false);
+        return;
+      }
+
+      // First launch or migration from the original localStorage-only version.
+      appState.classes = legacy.classes && Object.keys(legacy.classes).length ? legacy.classes : DEFAULT_CLASSES;
+      appState.attendanceLogs = legacy.attendanceLogs || [];
+      appState.evalLogs = legacy.evalLogs || [];
+      appState.classLogs = legacy.classLogs || [];
+      appState.completedSessions = legacy.completedSessions || [];
+      appState.sessionPeriod = legacy.sessionPeriod || { startDate: '', endDate: '' };
+      const meta = legacy.teacherMeta || {};
+      if (meta.teacher) document.getElementById('logTeacherName').value = meta.teacher;
+      if (meta.designation) document.getElementById('logDesignation').value = meta.designation;
+      if (meta.session) document.getElementById('logSessionYear').value = meta.session;
+      await persistAllData(false);
+    }
+
+    function saveClassesToStorage() {
+      try { localStorage.setItem('cm_classes', JSON.stringify(appState.classes)); } catch (_) {}
+      return persistAllData();
+    }
+
+    function saveLogsToStorage() {
+      // Legacy keys are updated best-effort; IndexedDB remains the primary store.
+      try { localStorage.setItem('cm_att_logs', JSON.stringify(appState.attendanceLogs)); } catch (_) {}
+      try { localStorage.setItem('cm_eval_logs', JSON.stringify(appState.evalLogs)); } catch (_) {}
+      try { localStorage.setItem('cm_class_logs', JSON.stringify(appState.classLogs)); } catch (_) {}
+      try { localStorage.setItem('cm_completed_sessions', JSON.stringify(appState.completedSessions)); } catch (_) {}
+      try { localStorage.setItem('cm_session_period', JSON.stringify(appState.sessionPeriod)); } catch (_) {}
+      try { localStorage.setItem('cm_teacher_meta', JSON.stringify({
+        teacher: document.getElementById('logTeacherName').value,
+        designation: document.getElementById('logDesignation').value,
+        session: document.getElementById('logSessionYear').value
+      })); } catch (_) {}
+      return persistAllData();
+    }
+
+    function saveSessionPeriod() {
+      const startDate = document.getElementById('sessionStartDate').value;
+      const endDate = document.getElementById('sessionEndDate').value;
+      if (startDate && endDate && endDate < startDate) {
+        showToast('Session End Date cannot be before Session Start Date.', 'error');
+        return false;
+      }
+      appState.sessionPeriod = { startDate, endDate };
+      try { localStorage.setItem('cm_session_period', JSON.stringify(appState.sessionPeriod)); } catch (_) {}
+      persistAllData();
+      return true;
+    }
+
+    function getSessionAttendanceSummary(className, subject, startDate, endDate) {
+      const logs = appState.attendanceLogs.filter(a =>
+        a.className === className && a.subject === subject &&
+        a.date >= startDate && a.date <= endDate
+      ).sort((a,b) => a.date.localeCompare(b.date));
+
+      const byStudent = {};
+      logs.forEach(log => {
+        (log.records || []).forEach(r => {
+          if (!byStudent[r.reg]) byStudent[r.reg] = { reg: r.reg, name: r.name, dates: {}, monthly: {} };
+          byStudent[r.reg].dates[log.date] = r.status || 'Present';
+        });
+      });
+
+      const months = {};
+      logs.forEach(log => {
+        const month = log.date.slice(0,7);
+        months[month] = months[month] || { month, dates: [] };
+        if (!months[month].dates.includes(log.date)) months[month].dates.push(log.date);
+      });
+      Object.values(months).forEach(m => m.dates.sort());
+
+      Object.values(byStudent).forEach(st => {
+        Object.values(months).forEach(m => {
+          const present = m.dates.filter(d => st.dates[d] === 'Present').length;
+          const absent = m.dates.filter(d => st.dates[d] === 'Absent').length;
+          const leave = m.dates.filter(d => st.dates[d] === 'Leave').length;
+          const total = present + absent + leave;
+          st.monthly[m.month] = { workingDays: total, present, absent, leave, percentage: total ? ((present / total) * 100).toFixed(2) : '0.00' };
+        });
+      });
+
+      return { logs, months: Object.values(months).sort((a,b) => a.month.localeCompare(b.month)), students: Object.values(byStudent).sort((a,b) => String(a.reg).localeCompare(String(b.reg), undefined, {numeric:true})) };
+    }
+
+    function buildMonthlyAttendanceCSV(summary, className, subject, startDate, endDate) {
+      const headers = ['Registration_No','Student_Name'];
+      summary.months.forEach(m => headers.push(`${m.month}_Working_Days`, `${m.month}_Present`, `${m.month}_Absent`, `${m.month}_Leave`, `${m.month}_Attendance_%`));
+      headers.push('SESSION_Working_Days','SESSION_Present','SESSION_Absent','SESSION_Leave','SESSION_Attendance_%');
+      const rows = [headers];
+      summary.students.forEach(st => {
+        const row = [st.reg, st.name];
+        let tw=0,tp=0,ta=0,tl=0;
+        summary.months.forEach(m => {
+          const x = st.monthly[m.month] || {workingDays:0,present:0,absent:0,leave:0,percentage:'0.00'};
+          row.push(x.workingDays,x.present,x.absent,x.leave,x.percentage);
+          tw+=x.workingDays; tp+=x.present; ta+=x.absent; tl+=x.leave;
+        });
+        row.push(tw,tp,ta,tl,tw ? ((tp/tw)*100).toFixed(2) : '0.00');
+        rows.push(row);
+      });
+      return rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g,'""')}"`).join(',')).join('\n');
+    }
+
+    function exportMonthlyAttendanceCSV(summary, className, subject, startDate, endDate) {
+      const csv = buildMonthlyAttendanceCSV(summary, className, subject, startDate, endDate);
+      triggerCSVDownload(csv, `Monthly_Attendance_${className}_${subject}_${startDate}_to_${endDate}.csv`);
+    }
+
+    function showToast(msg, type = "success") {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toastMessage');
+      const toastIcon = document.getElementById('toastIcon');
+
+      toastMsg.innerText = msg;
+      if (type === "error") {
+        toastIcon.className = "fa-solid fa-circle-exclamation text-rose-400 text-lg";
+      } else {
+        toastIcon.className = "fa-solid fa-circle-check text-green-400 text-lg";
+      }
+
+      toast.classList.remove('translate-y-[-100px]', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+
+      setTimeout(() => {
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-[-100px]', 'opacity-0');
+      }, 3000);
+    }
+
+    // --- TAB CONTROLLER ---
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('bg-brand-600', 'text-white', 'shadow-sm');
+        btn.classList.add('bg-slate-100', 'text-slate-600');
+      });
+
+      document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+      const activeBtn = document.getElementById(`tabBtn-${tabName}`);
+      activeBtn.classList.remove('bg-slate-100', 'text-slate-600');
+      activeBtn.classList.add('bg-brand-600', 'text-white', 'shadow-sm');
+
+      if (tabName === 'evaluation') renderEvalList();
+      if (tabName === 'logs') renderSavedLogs();
+      if (tabName === 'sessions') renderCompletedSessions();
+      if (tabName === 'roster') loadRosterEditor();
+    }
+
+    function populateClassDropdowns() {
+      const classKeys = Object.keys(appState.classes);
+      
+      const selectors = ['attClassSelect', 'evalClassSelect', 'classLogClassSelect', 'rosterClassSelect'];
+      selectors.forEach(id => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        select.innerHTML = '';
+        classKeys.forEach(cls => {
+          const opt = document.createElement('option');
+          opt.value = cls;
+          opt.textContent = cls;
+          select.appendChild(opt);
+        });
+      });
+
+      const sessionClsSelect = document.getElementById('sessionFilterClass');
+      if (sessionClsSelect) {
+        sessionClsSelect.innerHTML = '<option value="ALL">All Classes</option>';
+        classKeys.forEach(cls => {
+          const opt = document.createElement('option');
+          opt.value = cls;
+          opt.textContent = cls;
+          sessionClsSelect.appendChild(opt);
+        });
+      }
+
+      const logClsSelect = document.getElementById('logFilterClass');
+      if (logClsSelect) {
+        logClsSelect.innerHTML = '<option value="ALL">All Classes</option>';
+        classKeys.forEach(cls => {
+          const opt = document.createElement('option');
+          opt.value = cls;
+          opt.textContent = cls;
+          logClsSelect.appendChild(opt);
+        });
+        onLogFilterClassChange();
+      }
+    }
+
+    // --- TAB 1: ATTENDANCE CONTROLLER ---
+    function onClassChange() {
+      const selectedClass = document.getElementById('attClassSelect').value;
+      const subjSelect = document.getElementById('attSubjectSelect');
+      subjSelect.innerHTML = '';
+
+      if (selectedClass && appState.classes[selectedClass]) {
+        appState.classes[selectedClass].subjects.forEach(sub => {
+          const opt = document.createElement('option');
+          opt.value = sub;
+          opt.textContent = sub;
+          subjSelect.appendChild(opt);
+        });
+      }
+
+      appState.currentAttendanceStatus = {};
+      const roster = appState.classes[selectedClass]?.roster || [];
+      roster.forEach(st => {
+        appState.currentAttendanceStatus[st.reg] = 'Present';
+      });
+
+      document.getElementById('attSearchInput').value = '';
+      renderAttendanceList();
+    }
+
+    function renderAttendanceList() {
+      const container = document.getElementById('attendanceList');
+      container.innerHTML = '';
+
+      const selectedClass = document.getElementById('attClassSelect').value;
+      if (!selectedClass || !appState.classes[selectedClass]) return;
+
+      const roster = appState.classes[selectedClass].roster || [];
+      const query = (document.getElementById('attSearchInput').value || '').toLowerCase().trim();
+
+      const filteredRoster = roster.filter(st => 
+        st.name.toLowerCase().includes(query) || st.reg.toLowerCase().includes(query)
+      );
+
+      if (filteredRoster.length === 0) {
+        container.innerHTML = `<div class="text-center py-6 text-slate-400 text-xs font-bold">No matching students found.</div>`;
+        updateAttendanceMetrics();
+        return;
+      }
+
+      filteredRoster.forEach(st => {
+        const status = appState.currentAttendanceStatus[st.reg] || 'Present';
+        const row = document.createElement('div');
+        row.className = 'py-3 flex items-center justify-between gap-2';
+        row.innerHTML = `
+          <div>
+            <div class="font-bold text-slate-800 text-sm">${st.name}</div>
+            <div class="text-xs font-mono text-slate-400">${st.reg}</div>
+          </div>
+          <div class="flex items-center gap-1">
+            <button id="attBtn-P-${st.reg}" onclick="setStudentAttendance('${st.reg}', 'Present')" class="px-3 py-1.5 rounded-lg font-bold text-xs ${status === 'Present' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-500'} transition-all">
+              Present
+            </button>
+            <button id="attBtn-A-${st.reg}" onclick="setStudentAttendance('${st.reg}', 'Absent')" class="px-3 py-1.5 rounded-lg font-bold text-xs ${status === 'Absent' ? 'bg-rose-600 text-white' : 'bg-slate-100 text-slate-500'} transition-all">
+              Absent
+            </button>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+
+      updateAttendanceMetrics();
+    }
+
+    function filterAttendanceList() {
+      renderAttendanceList();
+    }
+
+    function setStudentAttendance(reg, status) {
+      appState.currentAttendanceStatus[reg] = status;
+      const pBtn = document.getElementById(`attBtn-P-${reg}`);
+      const aBtn = document.getElementById(`attBtn-A-${reg}`);
+
+      if (pBtn && aBtn) {
+        if (status === 'Present') {
+          pBtn.className = "px-3 py-1.5 rounded-lg font-bold text-xs bg-green-600 text-white transition-all";
+          aBtn.className = "px-3 py-1.5 rounded-lg font-bold text-xs bg-slate-100 text-slate-500 transition-all";
+        } else {
+          pBtn.className = "px-3 py-1.5 rounded-lg font-bold text-xs bg-slate-100 text-slate-500 transition-all";
+          aBtn.className = "px-3 py-1.5 rounded-lg font-bold text-xs bg-rose-600 text-white transition-all";
+        }
+      }
+
+      updateAttendanceMetrics();
+    }
+
+    function setAllAttendance(status) {
+      Object.keys(appState.currentAttendanceStatus).forEach(reg => {
+        appState.currentAttendanceStatus[reg] = status;
+      });
+      renderAttendanceList();
+    }
+
+    function updateAttendanceMetrics() {
+      const regs = Object.keys(appState.currentAttendanceStatus);
+      const total = regs.length;
+      let presentCount = 0;
+
+      regs.forEach(r => {
+        if (appState.currentAttendanceStatus[r] === 'Present') presentCount++;
+      });
+
+      const absentCount = total - presentCount;
+      const rate = total > 0 ? Math.round((presentCount / total) * 100) : 0;
+
+      document.getElementById('attCountPresent').innerText = presentCount;
+      document.getElementById('attCountAbsent').innerText = absentCount;
+      document.getElementById('attCountTotal').innerText = total;
+      document.getElementById('attPercentage').innerText = `${rate}%`;
+    }
+
+    function saveAttendanceSession() {
+      const date = document.getElementById('attDate').value;
+      const className = document.getElementById('attClassSelect').value;
+      const subject = document.getElementById('attSubjectSelect').value;
+
+      if (!date || !className || !subject) {
+        showToast("Please select Date, Class, and Subject!", "error");
+        return;
+      }
+
+      const roster = appState.classes[className]?.roster || [];
+      const records = roster.map(s => ({
+        reg: s.reg,
+        name: s.name,
+        status: appState.currentAttendanceStatus[s.reg] || 'Present'
+      }));
+
+      const logSession = {
+        id: 'ATT_' + Date.now(),
+        type: 'ATTENDANCE',
+        date,
+        className,
+        subject,
+        timestamp: new Date().toLocaleString(),
+        records
+      };
+
+      appState.attendanceLogs.unshift(logSession);
+      saveLogsToStorage();
+      showToast(`Attendance for ${subject} Saved!`);
+    }
+
+    function exportAttendanceCSV() {
+      const date = document.getElementById('attDate').value;
+      const className = document.getElementById('attClassSelect').value;
+      const subject = document.getElementById('attSubjectSelect').value;
+      const roster = appState.classes[className]?.roster || [];
+
+      let csvContent = "data:text/csv;charset=utf-8,Date,Class,Subject,Registration_No,Student_Name,Status\n";
+      roster.forEach(s => {
+        const st = appState.currentAttendanceStatus[s.reg] || 'Present';
+        csvContent += `"${date}","${className}","${subject}","${s.reg}","${s.name}","${st}"\n`;
+      });
+
+      triggerCSVDownload(csvContent, `Attendance_${className}_${subject}_${date}.csv`);
+    }
+
+    // --- TAB 2: EVALUATION CONTROLLER ---
+    function onEvalClassChange() {
+      const selectedClass = document.getElementById('evalClassSelect').value;
+      const subjSelect = document.getElementById('evalSubjectSelect');
+      subjSelect.innerHTML = '';
+
+      if (selectedClass && appState.classes[selectedClass]) {
+        appState.classes[selectedClass].subjects.forEach(sub => {
+          const opt = document.createElement('option');
+          opt.value = sub;
+          opt.textContent = sub;
+          subjSelect.appendChild(opt);
+        });
+      }
+
+      const maxScore = Number(document.getElementById('evalMaxScore').value) || 25;
+      appState.currentEvalScores = {};
+      const roster = appState.classes[selectedClass]?.roster || [];
+      roster.forEach(st => {
+        appState.currentEvalScores[st.reg] = maxScore;
+      });
+
+      document.getElementById('evalSearchInput').value = '';
+      renderEvalList();
+    }
+
+    function renderEvalList() {
+      const container = document.getElementById('evaluationList');
+      container.innerHTML = '';
+
+      const selectedClass = document.getElementById('evalClassSelect').value;
+      if (!selectedClass || !appState.classes[selectedClass]) return;
+
+      const roster = appState.classes[selectedClass].roster || [];
+      const maxScore = Number(document.getElementById('evalMaxScore').value) || 25;
+      const query = (document.getElementById('evalSearchInput').value || '').toLowerCase().trim();
+
+      const filteredRoster = roster.filter(st => 
+        st.name.toLowerCase().includes(query) || st.reg.toLowerCase().includes(query)
+      );
+
+      if (filteredRoster.length === 0) {
+        container.innerHTML = `<div class="text-center py-6 text-slate-400 text-xs font-bold">No matching students found.</div>`;
+        updateEvalMetrics();
+        return;
+      }
+
+      filteredRoster.forEach(st => {
+        if (appState.currentEvalScores[st.reg] === undefined) {
+          appState.currentEvalScores[st.reg] = maxScore;
+        }
+
+        const score = appState.currentEvalScores[st.reg];
+
+        const row = document.createElement('div');
+        row.className = 'py-3 flex items-center justify-between gap-3';
+        const attendanceSummary = getStudentAttendanceMetrics(selectedClass, document.getElementById('evalSubjectSelect').value, st.reg);
+        row.innerHTML = `
+          <div class="min-w-0">
+            <div class="font-bold text-slate-800 text-sm">${escapeHtml(st.name)}</div>
+            <div class="text-xs font-mono text-slate-400">${escapeHtml(st.reg)}</div>
+            <div class="text-[11px] font-semibold text-emerald-700 mt-1">Attendance: ${attendanceSummary.percentage.toFixed(2)}% · Attendance Marks: ${attendanceSummary.marks}/10 (${attendanceSummary.present}/${attendanceSummary.total} classes)</div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <input 
+              type="number" 
+              min="0" 
+              max="${maxScore}" 
+              value="${score}" 
+              oninput="updateEvalScore('${st.reg}', this.value)"
+              class="w-20 bg-slate-50 border border-slate-300 rounded-lg p-2 text-sm font-bold text-center text-slate-800 focus:outline-brand-500"
+            />
+            <span class="text-xs font-bold text-slate-400">/ ${maxScore}</span>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+
+      updateEvalMetrics();
+    }
+
+    function filterEvalList() {
+      renderEvalList();
+    }
+
+    function validateEvalMaximum() {
+      const input = document.getElementById('evalMaxScore');
+      let maxScore = Number(input.value);
+      if (!Number.isFinite(maxScore) || maxScore <= 0) {
+        maxScore = 25;
+        input.value = '25';
+        showToast('Maximum marks must be greater than zero. Reset to 25.', 'error');
+      }
+      Object.keys(appState.currentEvalScores || {}).forEach(reg => {
+        appState.currentEvalScores[reg] = Math.max(0, Math.min(Number(appState.currentEvalScores[reg]) || 0, maxScore));
+      });
+      return maxScore;
+    }
+
+    function updateEvalScore(reg, val) {
+      const maxScore = validateEvalMaximum();
+      let score = Number(val);
+      if (val === '' || !Number.isFinite(score) || score < 0) score = 0;
+      if (score > maxScore) {
+        score = maxScore;
+        showToast(`Marks cannot exceed the maximum of ${maxScore}.`, 'error');
+      }
+      appState.currentEvalScores[reg] = score;
+      updateEvalMetrics();
+    }
+
+    function setAllEvalScores(val) {
+      const maxScore = validateEvalMaximum();
+      let score = Number(val);
+      if (!Number.isFinite(score) || score < 0) score = 0;
+      if (score > maxScore) {
+        score = maxScore;
+        showToast(`Marks cannot exceed the maximum of ${maxScore}; values were capped.`, 'error');
+      }
+      Object.keys(appState.currentEvalScores).forEach(reg => { appState.currentEvalScores[reg] = score; });
+      renderEvalList();
+      showToast(`Set score to ${score} for all students`);
+    }
+
+    function updateEvalMetrics() {
+      const regs = Object.keys(appState.currentEvalScores);
+      const total = regs.length;
+      const maxScore = Number(document.getElementById('evalMaxScore').value) || 25;
+
+      if (total === 0) {
+        document.getElementById('evalAvgScore').innerText = `0 / ${maxScore}`;
+        document.getElementById('evalMaxAwarded').innerText = '0';
+        document.getElementById('evalPassRate').innerText = '0%';
+        document.getElementById('evalTotalCount').innerText = '0';
+        return;
+      }
+
+      let sum = 0;
+      let max = 0;
+      let passCount = 0;
+      const passThreshold = maxScore * 0.4;
+
+      regs.forEach(r => {
+        const score = appState.currentEvalScores[r] || 0;
+        sum += score;
+        if (score > max) max = score;
+        if (score >= passThreshold) passCount++;
+      });
+
+      const avg = (sum / total).toFixed(1);
+      const passRate = Math.round((passCount / total) * 100);
+
+      document.getElementById('evalAvgScore').innerText = `${avg} / ${maxScore}`;
+      document.getElementById('evalMaxAwarded').innerText = max;
+      document.getElementById('evalPassRate').innerText = `${passRate}%`;
+      document.getElementById('evalTotalCount').innerText = total;
+    }
+
+    function saveEvaluationSession() {
+      const date = document.getElementById('evalDate').value;
+      const className = document.getElementById('evalClassSelect').value;
+      const subject = document.getElementById('evalSubjectSelect').value;
+      const evalType = document.getElementById('evalTypeSelect').value;
+      const maxScore = validateEvalMaximum();
+
+      if (!date || !className || !subject) {
+        showToast("Please select Date, Class, and Subject!", "error");
+        return;
+      }
+
+      const roster = appState.classes[className]?.roster || [];
+      const records = roster.map(s => {
+        const entered = appState.currentEvalScores[s.reg] !== undefined ? Number(appState.currentEvalScores[s.reg]) : maxScore;
+        return { reg: s.reg, name: s.name, score: Math.max(0, Math.min(Number.isFinite(entered) ? entered : 0, maxScore)) };
+      });
+
+      const logSession = {
+        id: 'EVAL_' + Date.now(),
+        type: 'EVALUATION',
+        date,
+        className,
+        subject,
+        evalType,
+        maxScore,
+        timestamp: new Date().toLocaleString(),
+        records
+      };
+
+      appState.evalLogs.unshift(logSession);
+      saveLogsToStorage();
+      showToast(`Evaluation for ${subject} Saved!`);
+    }
+
+    function exportEvaluationCSV() {
+      const date = document.getElementById('evalDate').value;
+      const className = document.getElementById('evalClassSelect').value;
+      const subject = document.getElementById('evalSubjectSelect').value;
+      const evalType = document.getElementById('evalTypeSelect').value;
+      const maxScore = Number(document.getElementById('evalMaxScore').value) || 25;
+      const roster = appState.classes[className]?.roster || [];
+      const rows = [['Date','Class','Subject','Type','Max_Score','Registration_No','Student_Name','Score']];
+      roster.forEach(st => { const score = Number(appState.currentEvalScores[st.reg] ?? maxScore); rows.push([date,className,subject,evalType,maxScore,st.reg,st.name,Math.max(0, Math.min(Number.isFinite(score) ? score : 0, maxScore))]); });
+      triggerCSVDownload(rowsToCSV(rows), `Evaluation_${safeFilePart(className)}_${safeFilePart(subject)}_${date || 'undated'}.csv`);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
+
+    function csvCell(value) {
+      return `"${String(value ?? '').replace(/"/g, '""')}"`;
+    }
+
+    function rowsToCSV(rows) {
+      return '\ufeff' + rows.map(row => row.map(csvCell).join(',')).join('\r\n');
+    }
+
+    function safeFilePart(value) {
+      return String(value || 'Unknown').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_');
+    }
+
+    function getSubjectExportContext() {
+      const className = document.getElementById('evalClassSelect').value;
+      const subject = document.getElementById('evalSubjectSelect').value;
+      if (!className || !subject || !appState.classes[className]) {
+        showToast('Please select a class and subject first.', 'error');
+        return null;
+      }
+      // Reuse the academic metadata and session dates already entered in the Class Log tab.
+      const coordinator = (document.getElementById('logTeacherName')?.value || '').trim();
+      const session = (document.getElementById('logSessionYear')?.value || '').trim() ||
+        [appState.sessionPeriod?.startDate, appState.sessionPeriod?.endDate].filter(Boolean).join(' to ');
+      // Use the explicitly saved session period, not the date fields' default display values.
+      const startDate = (appState.sessionPeriod?.startDate || '').trim();
+      const endDate = (appState.sessionPeriod?.endDate || '').trim();
+      if (startDate && endDate && endDate < startDate) {
+        showToast('Session End Date cannot be before Session Start Date.', 'error');
+        return null;
+      }
+      const inRange = item => (!startDate || item.date >= startDate) && (!endDate || item.date <= endDate);
+      const attendanceLogs = appState.attendanceLogs.filter(a => a.className === className && a.subject === subject && inRange(a));
+      const evaluationLogs = appState.evalLogs.filter(e => e.className === className && e.subject === subject && inRange(e));
+      const dates = [...new Set(attendanceLogs.map(a => a.date).filter(Boolean))].sort();
+      return { className, subject, coordinator, session, startDate, endDate, roster: appState.classes[className].roster || [], attendanceLogs, evaluationLogs, dates };
+    }
+
+    function getAttendanceMarks(percentage) {
+      if (percentage < 50) return 0;
+      if (percentage < 60) return 2;
+      if (percentage < 70) return 6;
+      if (percentage < 80) return 7;
+      if (percentage < 90) return 9;
+      return 10;
+    }
+
+    function getStudentAttendanceMetrics(className, subject, reg, startDate = '', endDate = '') {
+      const recordsByDate = new Map();
+      // Logs are stored newest-first; keep the first record for a student on a date to avoid double counting.
+      appState.attendanceLogs.forEach(log => {
+        if (log.className !== className || log.subject !== subject) return;
+        if (startDate && log.date < startDate) return;
+        if (endDate && log.date > endDate) return;
+        if (recordsByDate.has(log.date)) return;
+        const rec = (log.records || []).find(r => String(r.reg) === String(reg));
+        if (rec) recordsByDate.set(log.date, rec.status || 'Present');
+      });
+      const total = recordsByDate.size;
+      let present = 0;
+      recordsByDate.forEach(status => { if (status === 'Present') present++; });
+      const percentage = total ? (present / total) * 100 : 0;
+      return { total, present, absent: [...recordsByDate.values()].filter(s => s === 'Absent').length,
+        leave: [...recordsByDate.values()].filter(s => s === 'Leave').length, percentage, marks: getAttendanceMarks(percentage), recordsByDate };
+    }
+
+    function getLatestStudentEval(ctx, reg, types) {
+      // appState.evalLogs is newest-first, so the first matching saved record is the latest saved score.
+      for (const log of ctx.evaluationLogs) {
+        if (!types.includes(log.evalType)) continue;
+        const rec = (log.records || []).find(r => String(r.reg) === String(reg));
+        if (rec) {
+          const rawMax = Number(log.maxScore);
+          const validMax = Number.isFinite(rawMax) && rawMax >= 0;
+          const hasScore = rec.score !== '' && rec.score !== null && rec.score !== undefined;
+          const rawScore = hasScore ? Number(rec.score) : '';
+          const score = hasScore && Number.isFinite(rawScore)
+            ? Math.max(0, Math.min(rawScore, validMax ? rawMax : rawScore)) : '';
+          return { score, maxScore: validMax ? rawMax : '', date: log.date || '' };
+        }
+      }
+      return { score: '', maxScore: '', date: '' };
+    }
+
+    function getExportMetadata(ctx) {
+      return {
+        title: 'Class Attendance cum Evaluation Records',
+        className: ctx.className,
+        subject: ctx.subject,
+        coordinator: ctx.coordinator,
+        session: ctx.session,
+        dateRange: ctx.startDate || ctx.endDate ? `${ctx.startDate || 'Beginning'} to ${ctx.endDate || 'Latest'}` : 'All saved dates',
+        exportDate: new Date().toISOString().slice(0,10)
+      };
+    }
+
+    function getMetadataRows(meta) {
+      // Put the metadata headings and values once at the top of the CSV, not in every student row.
+      return [
+        ['Title','Class Name','Course (Subject) Name','Course Coordinator','Session','Date Range','Export Date'],
+        [meta.title,meta.className,meta.subject,meta.coordinator,meta.session,meta.dateRange,meta.exportDate],
+        []
+      ];
+    }
+
+    function getBestClassTest(ct1, ct2) {
+      const has1 = ct1.score !== '' && Number.isFinite(Number(ct1.score));
+      const has2 = ct2.score !== '' && Number.isFinite(Number(ct2.score));
+      if (!has1 && !has2) return { score: '', maxScore: '', test: '' };
+      if (has1 && !has2) return { score: ct1.score, maxScore: ct1.maxScore, test: 'Class Test 1' };
+      if (has2 && !has1) return { score: ct2.score, maxScore: ct2.maxScore, test: 'Class Test 2' };
+      // When maxima differ, compare percentage scores so the result is comparable.
+      const p1 = Number(ct1.maxScore) > 0 ? Number(ct1.score) / Number(ct1.maxScore) : Number(ct1.score);
+      const p2 = Number(ct2.maxScore) > 0 ? Number(ct2.score) / Number(ct2.maxScore) : Number(ct2.score);
+      return p2 > p1
+        ? { score: ct2.score, maxScore: ct2.maxScore, test: 'Class Test 2' }
+        : { score: ct1.score, maxScore: ct1.maxScore, test: 'Class Test 1' };
+    }
+
+    function exportSubjectComprehensiveCSV() {
+      const ctx = getSubjectExportContext();
+      if (!ctx) return;
+      const meta = getExportMetadata(ctx);
+      const rows = [
+        ...getMetadataRows(meta),
+        [
+          'Registration No.','Name of Student','Attendance Working Classes','Classes Present','Classes Absent',
+          '% Attendance','Attendance Marks (out of 10)',
+          'Class Test 1 Marks','Class Test 1 Max Marks','Class Test 1 Date',
+          'Class Test 2 Marks','Class Test 2 Max Marks','Class Test 2 Date',
+          'Best Class Test Marks','Best Class Test Max Marks','Best Class Test Selected',
+          'Quiz Marks','Quiz Max Marks','Quiz Date','Assignment Marks','Assignment Max Marks','Assignment Date'
+        ]
+      ];
+      ctx.roster.forEach(st => {
+        const att = getStudentAttendanceMetrics(ctx.className, ctx.subject, st.reg, ctx.startDate, ctx.endDate);
+        const ct1 = getLatestStudentEval(ctx, st.reg, ['Class Test 1','Class Test']);
+        const ct2 = getLatestStudentEval(ctx, st.reg, ['Class Test 2']);
+        const best = getBestClassTest(ct1, ct2);
+        const quiz = getLatestStudentEval(ctx, st.reg, ['Quiz']);
+        const assignment = getLatestStudentEval(ctx, st.reg, ['Assignment']);
+        rows.push([
+          st.reg,st.name,att.total,att.present,att.absent,att.percentage.toFixed(2),att.marks,
+          ct1.score,ct1.maxScore,ct1.date,ct2.score,ct2.maxScore,ct2.date,
+          best.score,best.maxScore,best.test,
+          quiz.score,quiz.maxScore,quiz.date,assignment.score,assignment.maxScore,assignment.date
+        ]);
+      });
+      const file = `Class_Attendance_Evaluation_ALL_${safeFilePart(ctx.className)}_${safeFilePart(ctx.subject)}.csv`;
+      triggerCSVDownload(rowsToCSV(rows), file);
+      showToast('Comprehensive subject record CSV exported.');
+    }
+
+    function exportSubjectAttendanceCSV() {
+      const ctx = getSubjectExportContext();
+      if (!ctx) return;
+      const meta = getExportMetadata(ctx);
+      const rows = [
+        ...getMetadataRows(meta),
+        ['Registration No.','Name of Student', ...ctx.dates.map(d => `${d} Status`),
+          'Working Classes','Present','Absent','Leave','% Attendance','Attendance Marks (out of 10)']
+      ];
+      ctx.roster.forEach(st => {
+        const att = getStudentAttendanceMetrics(ctx.className, ctx.subject, st.reg, ctx.startDate, ctx.endDate);
+        const statuses = ctx.dates.map(date => {
+          for (const log of ctx.attendanceLogs) {
+            if (log.date !== date) continue;
+            const rec = (log.records || []).find(r => String(r.reg) === String(st.reg));
+            if (rec) return rec.status || 'Present';
+          }
+          return '';
+        });
+        rows.push([st.reg,st.name,...statuses,att.total,att.present,att.absent,att.leave,att.percentage.toFixed(2),att.marks]);
+      });
+      const file = `Class_Attendance_ONLY_${safeFilePart(ctx.className)}_${safeFilePart(ctx.subject)}.csv`;
+      triggerCSVDownload(rowsToCSV(rows), file);
+      showToast('Attendance-only subject record CSV exported.');
+    }
+
+    // --- TAB 3: CLASS LOG & SESSION PLANNER CONTROLLER ---
+    function onClassLogClassChange() {
+      const selectedClass = document.getElementById('classLogClassSelect').value;
+      const subjSelect = document.getElementById('classLogSubjectSelect');
+      subjSelect.innerHTML = '';
+
+      if (selectedClass && appState.classes[selectedClass]) {
+        appState.classes[selectedClass].subjects.forEach(sub => {
+          const opt = document.createElement('option');
+          opt.value = sub;
+          opt.textContent = sub;
+          subjSelect.appendChild(opt);
+        });
+      }
+    }
+
+    function toggleAssignmentSection() {
+      const isChecked = document.getElementById('hasAssignmentCheck').checked;
+      const container = document.getElementById('assignmentDetailsContainer');
+      if (isChecked) {
+        container.classList.remove('hidden');
+      } else {
+        container.classList.add('hidden');
+      }
+    }
+
+    function saveClassLogSession() {
+      const date = document.getElementById('classLogDate').value;
+      const className = document.getElementById('classLogClassSelect').value;
+      const subject = document.getElementById('classLogSubjectSelect').value;
+      const teacher = document.getElementById('logTeacherName').value.trim();
+      const designation = document.getElementById('logDesignation').value.trim();
+      const sessionYear = document.getElementById('logSessionYear').value.trim();
+      const topics = document.getElementById('classLogTopics').value.trim();
+
+      const hasAssignment = document.getElementById('hasAssignmentCheck').checked;
+      const assignmentText = hasAssignment ? document.getElementById('classLogAssignmentText').value.trim() : '';
+      const submissionDate = hasAssignment ? document.getElementById('classLogSubmissionDate').value : '';
+
+      if (!date || !className || !subject) {
+        showToast("Please select Date, Class, and Subject!", "error");
+        return;
+      }
+
+      if (!topics) {
+        showToast("Please enter the topic(s) covered!", "error");
+        return;
+      }
+
+      const logEntry = {
+        id: 'CLOG_' + Date.now(),
+        type: 'CLASS_LOG',
+        date,
+        className,
+        subject,
+        teacher,
+        designation,
+        sessionYear,
+        topics,
+        hasAssignment,
+        assignmentText,
+        submissionDate,
+        timestamp: new Date().toLocaleString()
+      };
+
+      appState.classLogs.unshift(logEntry);
+      saveLogsToStorage();
+      showToast(`Class Log for ${subject} Saved!`);
+    }
+
+    function exportClassLogCSV() {
+      const date = document.getElementById('classLogDate').value;
+      const className = document.getElementById('classLogClassSelect').value;
+      const subject = document.getElementById('classLogSubjectSelect').value;
+      const teacher = document.getElementById('logTeacherName').value.trim();
+      const designation = document.getElementById('logDesignation').value.trim();
+      const sessionYear = document.getElementById('logSessionYear').value.trim();
+      const topics = document.getElementById('classLogTopics').value.trim().replace(/"/g, '""');
+
+      const hasAssignment = document.getElementById('hasAssignmentCheck').checked;
+      const assignmentText = hasAssignment ? document.getElementById('classLogAssignmentText').value.trim().replace(/"/g, '""') : 'N/A';
+      const submissionDate = hasAssignment ? document.getElementById('classLogSubmissionDate').value : 'N/A';
+
+      let csvContent = "data:text/csv;charset=utf-8,Date,Class,Subject,Teacher_Name,Designation,Session_Year,Topics_Covered,Assignment_Given,Assignment_Details,Submission_Date\n";
+      csvContent += `"${date}","${className}","${subject}","${teacher}","${designation}","${sessionYear}","${topics}","${hasAssignment ? 'Yes' : 'No'}","${assignmentText}","${submissionDate}"\n`;
+
+      triggerCSVDownload(csvContent, `ClassLog_${className}_${subject}_${date}.csv`);
+    }
+
+    // --- TAB 4: SAVED LOGS CONTROLLER ---
+    function onLogFilterClassChange() {
+      const selectedClass = document.getElementById('logFilterClass').value;
+      const subjSelect = document.getElementById('logFilterSubject');
+      subjSelect.innerHTML = '<option value="ALL">All Subjects</option>';
+
+      if (selectedClass !== 'ALL' && appState.classes[selectedClass]) {
+        appState.classes[selectedClass].subjects.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s;
+          opt.textContent = s;
+          subjSelect.appendChild(opt);
+        });
+      }
+      renderSavedLogs();
+    }
+
+    function renderSavedLogs() {
+      const container = document.getElementById('logsContainer');
+      container.innerHTML = '';
+
+      const clsFilter = document.getElementById('logFilterClass').value;
+      const subjFilter = document.getElementById('logFilterSubject').value;
+
+      const allLogs = [
+        ...appState.attendanceLogs.map(l => ({ ...l, logCategory: 'Attendance' })),
+        ...appState.evalLogs.map(l => ({ ...l, logCategory: 'Evaluation' })),
+        ...appState.classLogs.map(l => ({ ...l, logCategory: 'Class Log' }))
+      ].sort((a, b) => b.id.localeCompare(a.id));
+
+      const filtered = allLogs.filter(l => {
+        const matchClass = clsFilter === 'ALL' || l.className === clsFilter;
+        const matchSubj = subjFilter === 'ALL' || l.subject === subjFilter;
+        return matchClass && matchSubj;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="bg-white p-8 text-center rounded-2xl border border-slate-200 text-slate-400 font-bold text-xs">No saved history records found matching your filters.</div>`;
+        return;
+      }
+
+      filtered.forEach(session => {
+        const cat = session.logCategory;
+        const card = document.createElement('div');
+        card.className = "bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4";
+        
+        let badgeColor = "bg-slate-100 text-slate-700";
+        if (cat === 'Attendance') badgeColor = "bg-green-100 text-green-700";
+        if (cat === 'Evaluation') badgeColor = "bg-amber-100 text-amber-700";
+        if (cat === 'Class Log') badgeColor = "bg-indigo-100 text-indigo-700";
+
+        let detailsPreview = "";
+        if (cat === 'Attendance' || cat === 'Evaluation') {
+          detailsPreview = `${session.records.length} students recorded`;
+        } else if (cat === 'Class Log') {
+          detailsPreview = `Topics: "${session.topics.substring(0, 45)}${session.topics.length > 45 ? '...' : ''}" ${session.hasAssignment ? ' • (Assignment Included)' : ''}`;
+        }
+
+        card.innerHTML = `
+          <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${badgeColor}">
+                ${cat}
+              </span>
+              <span class="text-xs font-bold text-slate-400">${periodText}</span>
+            </div>
+            <h4 class="font-extrabold text-slate-800 text-sm">${session.className} — <span class="text-brand-600">${session.subject}</span></h4>
+            <p class="text-xs text-slate-500">${detailsPreview} • <span class="text-slate-400">${session.timestamp}</span></p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="deleteSingleLog('${session.id}', '${cat}')" class="px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-500 font-bold rounded-xl text-xs transition-colors">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function deleteSingleLog(id, category) {
+      if (category === 'Attendance') {
+        appState.attendanceLogs = appState.attendanceLogs.filter(l => l.id !== id);
+      } else if (category === 'Evaluation') {
+        appState.evalLogs = appState.evalLogs.filter(l => l.id !== id);
+      } else if (category === 'Class Log') {
+        appState.classLogs = appState.classLogs.filter(l => l.id !== id);
+      }
+      saveLogsToStorage();
+      renderSavedLogs();
+      showToast("Log entry removed.");
+    }
+
+    function confirmClearLogs() {
+      document.getElementById('clearConfirmModal').classList.remove('hidden');
+    }
+
+    function closeClearModal() {
+      document.getElementById('clearConfirmModal').classList.add('hidden');
+    }
+
+    function clearAllLogs() {
+      appState.attendanceLogs = [];
+      appState.evalLogs = [];
+      appState.classLogs = [];
+      saveLogsToStorage();
+      closeClearModal();
+      renderSavedLogs();
+      showToast("Working logs cleared. Completed session archive is preserved.");
+    }
+
+    function exportAllLogsCSV() {
+      let csvContent = "data:text/csv;charset=utf-8,Category,Date,Class,Subject,Teacher/Max,Details/Topics,Submission_Date/Status\n";
+      
+      appState.attendanceLogs.forEach(s => {
+        s.records.forEach(r => {
+          csvContent += `"Attendance","${s.date}","${s.className}","${s.subject}","N/A","${r.name} (${r.reg})","${r.status}"\n`;
+        });
+      });
+
+      appState.evalLogs.forEach(s => {
+        s.records.forEach(r => {
+          csvContent += `"Evaluation","${s.date}","${s.className}","${s.subject}","Max:${s.maxScore} (${s.evalType})","${r.name} (${r.reg})",${r.score}\n`;
+        });
+      });
+
+      appState.classLogs.forEach(s => {
+        const top = s.topics.replace(/"/g, '""');
+        const asg = s.hasAssignment ? `Assignment: ${s.assignmentText.replace(/"/g, '""')}` : 'No Assignment';
+        csvContent += `"Class Log","${s.date}","${s.className}","${s.subject}","${s.teacher} (${s.designation})","Topics: ${top} | ${asg}","${s.submissionDate || 'N/A'}"\n`;
+      });
+
+      triggerCSVDownload(csvContent, `All_Classroom_Logs_${new Date().toISOString().split('T')[0]}.csv`);
+    }
+
+    // --- COMPLETED SESSION STORAGE & EXPORT ---
+    function makeSessionKey(date, className, subject) {
+      return `${date}__${className}__${subject}`;
+    }
+
+    function findMatchingLog(logArray, date, className, subject) {
+      return logArray.find(log =>
+        log.date === date &&
+        log.className === className &&
+        log.subject === subject
+      );
+    }
+
+    async function completeCurrentSession() {
+      const startDate = document.getElementById('sessionStartDate').value;
+      const endDate = document.getElementById('sessionEndDate').value;
+      const className = document.getElementById('classLogClassSelect').value;
+      const subject = document.getElementById('classLogSubjectSelect').value;
+
+      if (!startDate || !endDate || !className || !subject) {
+        showToast("Please enter Session Start Date, Session End Date, Class, and Subject.", "error");
+        return;
+      }
+      if (endDate < startDate) {
+        showToast("Session End Date cannot be before Session Start Date.", "error");
+        return;
+      }
+      saveSessionPeriod();
+
+      const today = new Date().toISOString().split('T')[0];
+      if (today < endDate) {
+        showToast(`Session cannot be completed before the End Date (${endDate}).`, "error");
+        return;
+      }
+
+      const attendanceLogs = appState.attendanceLogs.filter(a =>
+        a.className === className && a.subject === subject && a.date >= startDate && a.date <= endDate
+      ).sort((a,b) => a.date.localeCompare(b.date));
+      const evaluationLogs = appState.evalLogs.filter(e =>
+        e.className === className && e.subject === subject && e.date >= startDate && e.date <= endDate
+      ).sort((a,b) => a.date.localeCompare(b.date));
+      const classLogs = appState.classLogs.filter(c =>
+        c.className === className && c.subject === subject && c.date >= startDate && c.date <= endDate
+      ).sort((a,b) => a.date.localeCompare(b.date));
+
+      const missing = [];
+      if (!attendanceLogs.length) missing.push("Attendance");
+      if (!classLogs.length) missing.push("Class Log");
+      if (missing.length > 0) {
+        showToast(`No ${missing.join(" or ")} record found within the defined session period.`, "error");
+        return;
+      }
+
+      const summary = getSessionAttendanceSummary(className, subject, startDate, endDate);
+      const sessionKey = `${startDate}|${endDate}|${className}|${subject}`;
+      const existingIndex = appState.completedSessions.findIndex(s => s.sessionKey === sessionKey);
+      const lastClassLog = classLogs[classLogs.length - 1] || {};
+
+      const sessionBundle = {
+        id: 'SESSION_' + Date.now(),
+        sessionKey,
+        type: 'COMPLETED_SESSION',
+        startDate,
+        endDate,
+        className,
+        subject,
+        teacher: lastClassLog.teacher || '',
+        designation: lastClassLog.designation || '',
+        sessionYear: lastClassLog.sessionYear || '',
+        completedAt: new Date().toISOString(),
+        attendanceLogs,
+        evaluationLogs,
+        classLogs,
+        monthlyAttendance: summary
+      };
+
+      if (existingIndex >= 0) {
+        if (!confirm("A completed session for this Session Period + Class + Subject already exists. Replace the stored version?")) return;
+        sessionBundle.id = appState.completedSessions[existingIndex].id;
+        appState.completedSessions[existingIndex] = sessionBundle;
+      } else {
+        appState.completedSessions.unshift(sessionBundle);
+      }
+
+      const savedSuccessfully = await saveLogsToStorage();
+      renderCompletedSessions();
+      if (!savedSuccessfully) {
+        showToast('Session is visible in this page but could not be saved to browser storage. Export Backup ALL Data immediately.', 'error');
+        return;
+      }
+      showToast('Complete session archived and saved successfully.');
+      exportSingleCompletedSession(sessionBundle);
+    }
+
+    function renderCompletedSessions() {
+      const container = document.getElementById('completedSessionsContainer');
+      if (!container) return;
+
+      const clsFilter = document.getElementById('sessionFilterClass').value;
+      const dateFilter = document.getElementById('sessionFilterDate').value;
+      const periodFilter = document.getElementById('sessionFilterPeriod')?.value || '';
+
+      const filtered = appState.completedSessions.filter(s => {
+        const classMatch = clsFilter === 'ALL' || s.className === clsFilter;
+        const dateMatch = !dateFilter || s.endDate === dateFilter || s.startDate === dateFilter || s.date === dateFilter;
+        const periodMatch = !periodFilter || `${s.startDate || ''}|${s.endDate || ''}` === periodFilter;
+        return classMatch && dateMatch && periodMatch;
+      });
+
+      document.getElementById('completedSessionCount').innerText = appState.completedSessions.length;
+
+      const totalStudents = appState.completedSessions.reduce((sum, s) => {
+        return sum + (s.monthlyAttendance?.students?.length || s.attendance?.records?.length || 0);
+      }, 0);
+      document.getElementById('completedStudentCount').innerText = totalStudents;
+
+      if (appState.completedSessions.length > 0) {
+        const last = appState.completedSessions
+          .slice()
+          .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))[0];
+        document.getElementById('lastCompletedSession').innerText =
+          `${last.date} • ${last.className}`;
+      } else {
+        document.getElementById('lastCompletedSession').innerText = '—';
+      }
+
+      try {
+        const bytes = new Blob([JSON.stringify(appState.completedSessions)]).size;
+        document.getElementById('storageUsageText').innerText =
+          bytes < 1024 * 1024
+            ? `${(bytes / 1024).toFixed(1)} KB`
+            : `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+      } catch (e) {
+        document.getElementById('storageUsageText').innerText = 'Local';
+      }
+
+      container.innerHTML = '';
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="bg-white p-8 text-center rounded-2xl border border-slate-200 text-slate-400 font-bold text-xs">
+            No completed sessions found for the selected filter.
+          </div>`;
+        return;
+      }
+
+      filtered.forEach(session => {
+        const card = document.createElement('div');
+        card.className = "bg-white p-4 rounded-2xl border border-emerald-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4";
+
+        const attCount = session.monthlyAttendance?.students?.length || session.attendance?.records?.length || 0;
+        const monthCount = session.monthlyAttendance?.months?.length || 0;
+        const dayCount = session.monthlyAttendance?.logs?.length || session.attendanceLogs?.length || 0;
+        const evalCount = session.evaluationLogs?.length || (session.evaluation ? 1 : 0);
+        const periodText = session.startDate ? `${session.startDate} → ${session.endDate}` : session.date;
+
+        card.innerHTML = `
+          <div class="space-y-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-100 text-emerald-700">
+                COMPLETED
+              </span>
+              <span class="text-xs font-bold text-slate-400">${session.date}</span>
+            </div>
+            <h4 class="font-extrabold text-slate-800 text-sm">
+              ${session.className} — <span class="text-brand-600">${session.subject}</span>
+            </h4>
+            <p class="text-xs text-slate-500">
+              ${attCount} students • ${dayCount} attendance days • ${monthCount} months • ${evalCount} evaluation records
+              • <span class="text-slate-400">Completed ${new Date(session.completedAt).toLocaleString()}</span>
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="exportMonthlyAttendanceById('${session.id}')" class="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-xs">
+              <i class="fa-solid fa-calendar-days"></i> Monthly
+            </button>
+            <button onclick="exportSingleCompletedSessionById('${session.id}')" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">
+              <i class="fa-solid fa-download"></i> Export
+            </button>
+            <button onclick="deleteCompletedSession('${session.id}')" class="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-xl text-xs border border-rose-200">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    function clearSessionFilters() {
+      document.getElementById('sessionFilterClass').value = 'ALL';
+      document.getElementById('sessionFilterDate').value = '';
+      renderCompletedSessions();
+    }
+
+    function deleteCompletedSession(id) {
+      const session = appState.completedSessions.find(s => s.id === id);
+      if (!session) return;
+
+      if (!confirm(`Delete completed session "${session.className} — ${session.subject} — ${session.date}"?`)) {
+        return;
+      }
+
+      appState.completedSessions = appState.completedSessions.filter(s => s.id !== id);
+      saveLogsToStorage();
+      renderCompletedSessions();
+      showToast("Completed session removed.");
+    }
+
+    function exportSingleCompletedSessionById(id) {
+      const session = appState.completedSessions.find(s => s.id === id);
+      if (session) exportSingleCompletedSession(session);
+    }
+
+    function exportSingleCompletedSession(session) {
+      const safe = value => String(value ?? '').replace(/"/g, '""');
+      const attendanceLogs = session.attendanceLogs || (session.attendance ? [session.attendance] : []);
+      const evaluationLogs = session.evaluationLogs || (session.evaluation ? [session.evaluation] : []);
+      const classLogs = session.classLogs || (session.classLog ? [session.classLog] : []);
+
+      let csv = 'Record_Type,Session_Start,Session_End,Record_Date,Class,Subject,Registration_No,Student_Name,Attendance_Status,Evaluation_Type,Max_Score,Score,Teacher,Designation,Academic_Session,Topics,Assignment_Given,Assignment_Details,Submission_Date\n';
+      const evalMap = {};
+      evaluationLogs.forEach(e => (e.records || []).forEach(r => { evalMap[`${e.date}|${r.reg}`] = { type:e.evalType || '', max:e.maxScore || '', score:r.score }; }));
+      const students = {};
+      attendanceLogs.forEach(a => (a.records || []).forEach(r => { students[r.reg] = r.name; }));
+      Object.keys(students).sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true})).forEach(reg => {
+        attendanceLogs.forEach(a => {
+          const rec = (a.records || []).find(r => r.reg === reg);
+          if (!rec) return;
+          const e = evalMap[`${a.date}|${reg}`] || {};
+          csv += `"Student","${safe(session.startDate)}","${safe(session.endDate)}","${safe(a.date)}","${safe(session.className)}","${safe(session.subject)}","${safe(reg)}","${safe(students[reg])}","${safe(rec.status)}","${safe(e.type)}","${safe(e.max)}","${safe(e.score)}","${safe(session.teacher)}","${safe(session.designation)}","${safe(session.sessionYear)}","","","",""\n`;
+        });
+      });
+      classLogs.forEach(cl => {
+        csv += `"Class Log","${safe(session.startDate)}","${safe(session.endDate)}","${safe(cl.date)}","${safe(session.className)}","${safe(session.subject)}","","","","","","","${safe(cl.teacher || session.teacher)}","${safe(cl.designation || session.designation)}","${safe(cl.sessionYear || session.sessionYear)}","${safe(cl.topics)}","${cl.hasAssignment ? 'Yes' : 'No'}","${safe(cl.assignmentText || '')}","${safe(cl.submissionDate || '')}"\n`;
+      });
+      csv += '\nMonthly Attendance Register\n';
+      if (session.monthlyAttendance) csv += buildMonthlyAttendanceCSV(session.monthlyAttendance, session.className, session.subject, session.startDate, session.endDate) + '\n';
+
+      triggerCSVDownload(csv, `CompletedSession_${session.className}_${session.subject}_${session.startDate}_to_${session.endDate}.csv`);
+    }
+
+    function exportMonthlyAttendanceById(id) {
+      const session = appState.completedSessions.find(s => s.id === id);
+      if (!session) return;
+      const summary = session.monthlyAttendance || getSessionAttendanceSummary(session.className, session.subject, session.startDate, session.endDate);
+      exportMonthlyAttendanceCSV(summary, session.className, session.subject, session.startDate, session.endDate);
+    }
+
+    function exportCompletedSessionsCSV() {
+      if (appState.completedSessions.length === 0) {
+        showToast("No completed sessions available for export.", "error");
+        return;
+      }
+      const safe = value => String(value ?? '').replace(/"/g, '""');
+      let csv = "Session_ID,Session_Start,Session_End,Class,Subject,Teacher,Designation,Academic_Session,Students,Attendance_Days,Months,Evaluation_Records,Session_Attendance_%,Completed_At\n";
+      appState.completedSessions.forEach(s => {
+        const summary = s.monthlyAttendance || getSessionAttendanceSummary(s.className, s.subject, s.startDate, s.endDate);
+        let tw=0,tp=0;
+        (summary.students || []).forEach(st => (summary.months || []).forEach(m => { const x=st.monthly[m.month] || {}; tw += Number(x.workingDays||0); tp += Number(x.present||0); }));
+        const pct = tw ? ((tp/tw)*100).toFixed(2) : '0.00';
+        csv += `"${safe(s.id)}","${safe(s.startDate || s.date)}","${safe(s.endDate || s.date)}","${safe(s.className)}","${safe(s.subject)}","${safe(s.teacher)}","${safe(s.designation)}","${safe(s.sessionYear)}",${summary.students?.length || 0},${summary.logs?.length || 0},${summary.months?.length || 0},${s.evaluationLogs?.length || (s.evaluation ? 1 : 0)},${pct},"${safe(s.completedAt)}"\n`;
+      });
+      triggerCSVDownload(csv, `Completed_Sessions_${new Date().toISOString().split('T')[0]}.csv`);
+    }
+
+    async function exportFullBackupJSON() {
+      await cmSaveQueue.catch(() => {});
+      const snapshot = getStateSnapshot();
+      const backup = {
+        application: 'Classroom Manager',
+        backupType: 'Complete Application Backup',
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        data: snapshot
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ClassroomManager_FULL_Backup_${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast('Full backup exported: roster, attendance, evaluation, class logs and completed sessions.');
+    }
+
+    async function restoreFullBackupJSON(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      try {
+        const backup = JSON.parse(await file.text());
+        // Accept the complete backup generated by this app, a raw state snapshot,
+        // or the older "Backup JSON" completed-session archive.
+        if (Array.isArray(backup.sessions) && (backup.archiveType === 'Completed Session Archive' || backup.application === 'Classroom Manager')) {
+          if (!confirm(`Import ${backup.sessions.length} completed session(s) from this archive? Existing daily logs and classes will be kept.`)) return;
+          const byKey = new Map(appState.completedSessions.map(s => [s.sessionKey || s.id, s]));
+          backup.sessions.forEach(s => byKey.set(s.sessionKey || s.id, s));
+          appState.completedSessions = Array.from(byKey.values());
+        } else {
+          const data = backup.data || backup;
+          if (!data || !Array.isArray(data.attendanceLogs) || !Array.isArray(data.classLogs) ||
+              !Array.isArray(data.evalLogs) || !data.classes || typeof data.classes !== 'object' ||
+              !Array.isArray(data.completedSessions)) {
+            throw new Error('This file is not a complete Classroom Manager backup or a supported session archive.');
+          }
+          if (!confirm('Restore this complete backup? Current application data will be replaced by the data in the selected file. Export a full backup first if you need to keep the current data.')) return;
+          appState.classes = data.classes;
+          appState.attendanceLogs = data.attendanceLogs;
+          appState.evalLogs = data.evalLogs;
+          appState.classLogs = data.classLogs;
+          appState.completedSessions = data.completedSessions;
+          appState.sessionPeriod = data.sessionPeriod || { startDate: '', endDate: '' };
+          const meta = data.teacherMeta || {};
+          document.getElementById('logTeacherName').value = meta.teacher || '';
+          document.getElementById('logDesignation').value = meta.designation || '';
+          document.getElementById('logSessionYear').value = meta.session || '';
+        }
+        const saved = await persistAllData();
+        populateClassDropdowns();
+        onClassChange();
+        onEvalClassChange();
+        onClassLogClassChange();
+        loadRosterEditor();
+        renderSavedLogs();
+        renderCompletedSessions();
+        if (!saved) throw new Error('Data was loaded into the current page but could not be saved to browser storage. Export the full JSON backup and keep the file safe.');
+        showToast('Backup restored and saved successfully.');
+      } catch (err) {
+        showToast(`Restore failed: ${err.message || 'Invalid backup file'}`, 'error');
+      } finally {
+        event.target.value = '';
+      }
+    }
+
+    function exportSessionArchiveJSON() {
+      if (appState.completedSessions.length === 0) {
+        showToast("No completed sessions available for backup.", "error");
+        return;
+      }
+
+      const archive = {
+        application: "Classroom Manager",
+        archiveType: "Completed Session Archive",
+        exportedAt: new Date().toISOString(),
+        sessionCount: appState.completedSessions.length,
+        sessions: appState.completedSessions
+      };
+
+      const blob = new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ClassroomManager_Session_Backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+
+      showToast("Completed-session backup exported.");
+    }
+
+    // --- TAB 6: ROSTER & CLASS MANAGER ---
+    function loadRosterEditor() {
+      const selectedClass = document.getElementById('rosterClassSelect').value;
+      if (!selectedClass || !appState.classes[selectedClass]) return;
+
+      const clsData = appState.classes[selectedClass];
+      document.getElementById('classSubjectsInput').value = clsData.subjects ? clsData.subjects.join(', ') : '';
+      
+      const rosterText = clsData.roster ? clsData.roster.map(st => `${st.reg}, ${st.name}`).join('\n') : '';
+      document.getElementById('rosterInput').value = rosterText;
+
+      renderRosterPreviewTable(clsData.roster || []);
+    }
+
+    function renderRosterPreviewTable(roster) {
+      const tbody = document.getElementById('activeRosterTableBody');
+      tbody.innerHTML = '';
+      document.getElementById('activeRosterCount').innerText = roster.length;
+
+      roster.forEach((st, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = 'border-b border-slate-100 hover:bg-slate-100/50';
+        tr.innerHTML = `
+          <td class="p-2 font-mono text-slate-400">${idx + 1}</td>
+          <td class="p-2 font-bold font-mono text-slate-700">${st.reg}</td>
+          <td class="p-2 text-slate-800 font-semibold">${st.name}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function saveRosterAndSubjectsFromTextarea() {
+      const selectedClass = document.getElementById('rosterClassSelect').value;
+      if (!selectedClass) return;
+
+      const subjRaw = document.getElementById('classSubjectsInput').value;
+      const subjects = subjRaw.split(',').map(s => s.trim()).filter(s => s.length > 0);
+
+      const rosterRaw = document.getElementById('rosterInput').value;
+      const lines = rosterRaw.split('\n');
+      const roster = [];
+
+      lines.forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed) {
+          const parts = trimmed.includes('\t') ? trimmed.split('\t') : trimmed.split(',');
+          if (parts.length >= 2) {
+            roster.push({
+              reg: parts[0].trim(),
+              name: parts.slice(1).join(' ').trim()
+            });
+          } else if (parts.length === 1) {
+            roster.push({
+              reg: `ID-${roster.length + 1}`,
+              name: parts[0].trim()
+            });
+          }
+        }
+      });
+
+      appState.classes[selectedClass] = {
+        subjects,
+        roster
+      };
+
+      saveClassesToStorage();
+      renderRosterPreviewTable(roster);
+      onClassChange();
+      onEvalClassChange();
+      onClassLogClassChange();
+      showToast(`Class roster for ${selectedClass} saved!`);
+    }
+
+    function copyRosterToClipboard() {
+      const text = document.getElementById('rosterInput').value;
+      navigator.clipboard.writeText(text).then(() => {
+        showToast("Roster copied to clipboard!");
+      });
+    }
+
+    // --- BULK COPY & PASTE MODAL ---
+    function openBulkImportModal() {
+      document.getElementById('bulkPasteTextarea').value = '';
+      document.getElementById('bulkImportModal').classList.remove('hidden');
+    }
+
+    function closeBulkImportModal() {
+      document.getElementById('bulkImportModal').classList.add('hidden');
+    }
+
+    function processBulkPasteData() {
+      const pasteText = document.getElementById('bulkPasteTextarea').value;
+      if (!pasteText.trim()) {
+        showToast("Please paste data before importing!", "error");
+        return;
+      }
+
+      const lines = pasteText.split('\n');
+      const newEntries = [];
+
+      lines.forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed) {
+          const parts = trimmed.includes('\t') ? trimmed.split('\t') : trimmed.split(',');
+          if (parts.length >= 2) {
+            newEntries.push(`${parts[0].trim()}, ${parts.slice(1).join(' ').trim()}`);
+          }
+        }
+      });
+
+      if (newEntries.length === 0) {
+        showToast("No valid tab or comma separated entries found.", "error");
+        return;
+      }
+
+      const textarea = document.getElementById('rosterInput');
+      const currentVal = textarea.value.trim();
+      textarea.value = currentVal ? `${currentVal}\n${newEntries.join('\n')}` : newEntries.join('\n');
+
+      closeBulkImportModal();
+      saveRosterAndSubjectsFromTextarea();
+      showToast(`Successfully added ${newEntries.length} students!`);
+    }
+
+    // --- NEW CLASS MODAL ---
+    function openNewClassModal() {
+      document.getElementById('newClassNameInput').value = '';
+      document.getElementById('newClassSubjectsInput').value = '';
+      document.getElementById('newClassModal').classList.remove('hidden');
+    }
+
+    function closeNewClassModal() {
+      document.getElementById('newClassModal').classList.add('hidden');
+    }
+
+    function createNewClass() {
+      const className = document.getElementById('newClassNameInput').value.trim();
+      const subjRaw = document.getElementById('newClassSubjectsInput').value;
+
+      if (!className) {
+        showToast("Class Name is required!", "error");
+        return;
+      }
+
+      const subjects = subjRaw.split(',').map(s => s.trim()).filter(s => s.length > 0);
+
+      appState.classes[className] = {
+        subjects: subjects.length > 0 ? subjects : ["General"],
+        roster: []
+      };
+
+      saveClassesToStorage();
+      populateClassDropdowns();
+      
+      document.getElementById('rosterClassSelect').value = className;
+      loadRosterEditor();
+      closeNewClassModal();
+      showToast(`Class '${className}' created!`);
+    }
+
+    function deleteCurrentClassRoster() {
+      const selectedClass = document.getElementById('rosterClassSelect').value;
+      if (!selectedClass) return;
+
+      if (confirm(`Are you sure you want to delete '${selectedClass}'?`)) {
+        delete appState.classes[selectedClass];
+        saveClassesToStorage();
+        populateClassDropdowns();
+        onClassChange();
+        onEvalClassChange();
+        onClassLogClassChange();
+        loadRosterEditor();
+        showToast(`Class '${selectedClass}' deleted.`);
+      }
+    }
+
+    // --- UTILS ---
+    function triggerCSVDownload(csvContent, filename) {
+      const blob = new Blob([csvContent.replace(/^data:text\/csv;charset=utf-8,/, '')], {
+        type: 'text/csv;charset=utf-8;'
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    }
+  </script>
+</body>
+</html>
