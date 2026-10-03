@@ -712,7 +712,7 @@
     const CM_GOOGLE_CLIENT_ID_KEY = 'cm_google_client_id';
     const CM_DRIVE_FILE_ID_KEY = 'cm_drive_file_id';
     const CM_DRIVE_LAST_SYNC_KEY = 'cm_drive_last_sync';
-    const CM_DRIVE_BACKUP_FOLDER_NAME = 'Classroom Manager Backups';
+    const CM_DRIVE_BACKUP_FOLDER_NAME = 'classroom-manager BACKUP';
     const CM_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
     let cmGoogleTokenClient = null;
     let cmGoogleAccessToken = null;
@@ -861,23 +861,78 @@
       return r.json();
     }
 
+    async function migrateLegacyDriveBackups(targetFolderId) {
+      // One-time migration: move backup files from the old folder into the new
+      // folder, then remove the old folder if it is empty. The files are app-
+      // created backups, so they are within the drive.file scope this app uses.
+      const oldName = 'Classroom Manager Backups';
+      const folderQuery = `name='${oldName.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+      const folderUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(folderQuery)}&spaces=drive&pageSize=20&fields=files(id,name,mimeType)`;
+      const folderResponse = await driveRequest(folderUrl);
+      const folderData = await folderResponse.json();
+      const oldFolders = folderData.files || [];
+      if (!oldFolders.length) return 0;
+
+      let moved = 0;
+      for (const oldFolder of oldFolders) {
+        const childQuery = `'${oldFolder.id}' in parents and trashed=false`;
+        const childUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(childQuery)}&spaces=drive&pageSize=100&fields=files(id,name,mimeType,parents)`;
+        const childResponse = await driveRequest(childUrl);
+        const childData = await childResponse.json();
+        const children = childData.files || [];
+
+        for (const child of children) {
+          // Move backup files; leave unrelated subfolders/content alone.
+          if (child.mimeType === 'application/vnd.google-apps.folder') continue;
+          if (!/^ClassroomManager_Data(?:_|\.)/.test(child.name || '')) continue;
+          await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(child.id)}?addParents=${encodeURIComponent(targetFolderId)}&removeParents=${encodeURIComponent(oldFolder.id)}&fields=id,name,parents`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}'
+          });
+          moved++;
+        }
+
+        // If the old folder is now empty, move it to trash so only the new
+        // backup folder remains. If anything else is inside, leave it intact.
+        const remainingQuery = `'${oldFolder.id}' in parents and trashed=false`;
+        const remainingUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(remainingQuery)}&spaces=drive&pageSize=10&fields=files(id,name,mimeType)`;
+        const remainingResponse = await driveRequest(remainingUrl);
+        const remainingData = await remainingResponse.json();
+        if (!(remainingData.files || []).length) {
+          await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(oldFolder.id)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trashed: true })
+          });
+        }
+      }
+      return moved;
+    }
+
     async function findOrCreateDriveBackupFolder() {
       const q = `name='${CM_DRIVE_BACKUP_FOLDER_NAME.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
       const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&pageSize=10&fields=files(id,name,mimeType)`;
       const r = await driveRequest(url);
       const data = await r.json();
-      if (data.files && data.files.length) return data.files[0];
-      const body = JSON.stringify({
-        name: CM_DRIVE_BACKUP_FOLDER_NAME,
-        mimeType: 'application/vnd.google-apps.folder'
-      });
-      const created = await driveRequest('https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body
-      });
-      const folder = await created.json();
-      if (!folder.id) throw new Error('Could not create the automatic backup folder in Google Drive.');
+      let folder;
+      if (data.files && data.files.length) {
+        folder = data.files[0];
+      } else {
+        const body = JSON.stringify({
+          name: CM_DRIVE_BACKUP_FOLDER_NAME,
+          mimeType: 'application/vnd.google-apps.folder'
+        });
+        const created = await driveRequest('https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body
+        });
+        folder = await created.json();
+        if (!folder.id) throw new Error('Could not create the automatic backup folder in Google Drive.');
+      }
+
+      await migrateLegacyDriveBackups(folder.id);
       return folder;
     }
 
@@ -902,7 +957,28 @@
       });
       const file = await r.json();
       if (!file.id) throw new Error('Automatic backup could not be created. Push was stopped to protect your existing Drive data.');
+
+      // Keep only the 5 newest automatic backups. Each backup is a complete
+      // snapshot, so the newest five remain independently usable for recovery.
+      await pruneOldDriveBackups(folderId, 5);
       return file;
+    }
+
+    async function pruneOldDriveBackups(folderId, keepCount = 5) {
+      const q = `'${folderId}' in parents and trashed=false and mimeType='application/json'`;
+      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&spaces=drive&pageSize=100&orderBy=createdTime desc&fields=files(id,name,createdTime,mimeType)`;
+      const r = await driveRequest(url);
+      const data = await r.json();
+      const backups = (data.files || []).filter(f => /^ClassroomManager_Data_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.json$/.test(f.name || ''));
+      const oldBackups = backups.slice(keepCount);
+      for (const backup of oldBackups) {
+        await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(backup.id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trashed: true })
+        });
+      }
+      return oldBackups.length;
     }
 
     async function syncToGoogleDrive() {
